@@ -14,8 +14,9 @@ const GENRE_PAGE = 20;
 const LIST_TIMEOUT_MS = 8000;
 // resolve has 20 s in all: two tries of 8 s and a short pause.
 const RESOLVE_TIMEOUT_MS = 8000;
-// With the site's own HLS copy in hand the addon only adds alternatives: it gets this long to answer, no more.
-const ADDON_GRACE_MS = 1500;
+// With the site's own HLS copy in hand the addon only adds alternatives, so its first try gets this long and no more
+// (the host waits for every request in flight, so a request left behind would still hold the answer back).
+const ADDON_FAST_MS = 2500;
 
 // ---- 1. texts -------------------------------------------------------------------------------------------------
 
@@ -601,12 +602,12 @@ function tellApart(list) {
 }
 
 // The backend scrapes the sites live: an empty answer is often a hiccup, so it is asked once more before giving up.
-async function streamsOf(type, videoId) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const body = await getJson(streamUrl(type, videoId), RESOLVE_TIMEOUT_MS);
+async function streamsOf(type, videoId, timeoutMs = RESOLVE_TIMEOUT_MS, attempts = 2) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const body = await getJson(streamUrl(type, videoId), timeoutMs);
     const list = Array.isArray(body.streams) ? body.streams.filter((s) => s && typeof s.url === "string" && /^https?:\/\//.test(s.url)) : [];
     if (list.length) return list;
-    if (attempt === 0) await kino.sleep(800);
+    if (attempt < attempts - 1) await kino.sleep(800);
   }
   return [];
 }
@@ -620,10 +621,14 @@ export async function resolve(ref) {
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
   const ep = animeav1Episode(r.id);
   // The addon failing must not take the site's own HLS down with it: its error is kept for when nothing else plays.
+  // A title the site may have is asked in a fast single try, in parallel with the site; only when neither answers is
+  // the addon given its full time.
   let addonError = null;
-  const addonCopies = streamsOf(r.type, r.id).catch((e) => ((addonError = e), []));
+  const askAddon = (ms, tries) => streamsOf(r.type, r.id, ms, tries).then((l) => ((addonError = null), l), (e) => ((addonError = e), []));
+  const addonFirst = askAddon(ep ? ADDON_FAST_MS : RESOLVE_TIMEOUT_MS, ep ? 1 : 2);
   const copies = ep ? await hlsCopies(ep.slug, ep.number) : [];
-  const raw = copies.length ? await Promise.race([addonCopies, kino.sleep(ADDON_GRACE_MS).then(() => [])]) : await addonCopies;
+  let raw = await addonFirst;
+  if (ep && !raw.length && !copies.length) raw = await askAddon(RESOLVE_TIMEOUT_MS, 1);
   const wantDubFirst = kino.config.get("audio") === "dub";
   const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
   if (!raw.length) {
