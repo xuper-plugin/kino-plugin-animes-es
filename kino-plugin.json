@@ -1,0 +1,133 @@
+{
+  "id": "animes-es",
+  "name": "AnimES",
+  "version": "1.0.0",
+  "apiVersion": 8,
+  "entry": "plugin.js",
+  "icon": "icon.png",
+  "description": "Anime en español, doblado o subtitulado, desde AnimeAV1, Henaojara, TioAnime y JKAnime. Catálogo y enlaces del addon AnimES de Pigamer37.",
+  "author": "xuper-plugin",
+  "homepage": "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime/manifest.json",
+  "hosts": [
+    "pigamer37.alwaysdata.net"
+  ],
+  "capabilities": [
+    "search",
+    "home",
+    "browse",
+    "episodes",
+    "resolve",
+    "scopedSearch",
+    "download"
+  ],
+  "streamHosts": "any",
+  "categories": [
+    "anime",
+    "series"
+  ],
+  "color": "#FF8A3D",
+  "section": {
+    "label": "AnimES"
+  },
+  "theme": {
+    "accent": "#FF8A3D",
+    "onAccent": "#1F0F05",
+    "background": "#0D0A08",
+    "surface": "#1A1410",
+    "highlight": "#FFD3A8"
+  },
+  "telemetry": true,
+  "settings": [
+    {
+      "key": "audioSection",
+      "type": "section",
+      "label": "Audio",
+      "hint": "Qué versión se reproduce primero; la otra queda en el menú de servidores."
+    },
+    {
+      "key": "audio",
+      "type": "select",
+      "label": "Audio preferido",
+      "default": "sub",
+      "options": [
+        {
+          "value": "sub",
+          "label": "Subtitulado (audio original)"
+        },
+        {
+          "value": "dub",
+          "label": "Doblado"
+        }
+      ]
+    },
+    {
+      "key": "srcSection",
+      "type": "section",
+      "label": "Fuentes",
+      "hint": "Activa o desactiva cada sitio de anime."
+    },
+    {
+      "key": "src_animeav1",
+      "type": "toggle",
+      "label": "AnimeAV1",
+      "default": true
+    },
+    {
+      "key": "src_henaojara",
+      "type": "toggle",
+      "label": "Henaojara",
+      "default": true
+    },
+    {
+      "key": "src_tioanime",
+      "type": "toggle",
+      "label": "TioAnime",
+      "default": true
+    },
+    {
+      "key": "src_jkanime",
+      "type": "toggle",
+      "label": "JKAnime",
+      "default": false,
+      "hint": "Apagada: su servidor no devuelve episodios ni búsquedas por ahora."
+    },
+    {
+      "key": "homeSection",
+      "type": "section",
+      "label": "Inicio"
+    },
+    {
+      "key": "homeRows",
+      "type": "toggle",
+      "label": "Filas en Inicio",
+      "default": true,
+      "hint": "El anime en emisión de cada fuente aparece en el Inicio de Kino."
+    },
+    {
+      "key": "toolsSection",
+      "type": "section",
+      "label": "Herramientas"
+    },
+    {
+      "key": "health",
+      "type": "status",
+      "label": "Estado de las fuentes"
+    },
+    {
+      "key": "cache",
+      "type": "status",
+      "label": "Caché"
+    },
+    {
+      "key": "probe",
+      "type": "action",
+      "label": "Comprobar fuentes"
+    },
+    {
+      "key": "clearCache",
+      "type": "action",
+      "label": "Vaciar caché",
+      "confirm": "¿Vaciar la caché de listas y episodios?"
+    }
+  ]
+}
