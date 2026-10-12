@@ -533,6 +533,26 @@ function toStream(s) {
   return { dub, stream: out };
 }
 
+// Copies that read the same ("MP4Upload · Subtitulado" twice) are told apart in the Server menu by their node ("a1", "a3")
+// when the hosts differ, else by their position ("#2"): a person whose first copy crawls needs to know which one to pick.
+function tellApart(list) {
+  const groups = new Map();
+  for (const x of list) {
+    if (!groups.has(x.stream.label)) groups.set(x.stream.label, []);
+    groups.get(x.stream.label).push(x);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const nodes = group.map((x) => (String(x.stream.url).split("/")[2] || "").split(":")[0].split(".")[0]);
+    const distinct = new Set(nodes).size === group.length && nodes.every(Boolean);
+    group.forEach((x, i) => {
+      const tag = distinct ? nodes[i] : "#" + (i + 1);
+      const label = x.stream.label;
+      x.stream.label = (label.includes(" · ") ? label.replace(" · ", ` ${tag} · `) : `${tag} · ${label}`).slice(0, 40);
+    });
+  }
+}
+
 // The backend scrapes the sites live: an empty answer is often a hiccup, so it is asked once more before giving up.
 async function streamsOf(type, videoId) {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -555,6 +575,7 @@ export async function resolve(ref) {
   if (!raw.length) throw kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
   const seen = new Set();
   const all = raw.map(toStream).filter((x) => (seen.has(x.stream.url) ? false : (seen.add(x.stream.url), true)));
+  tellApart(all);
   const wantDub = kino.config.get("audio") === "dub";
   const ordered = all.filter((x) => x.dub === wantDub).concat(all.filter((x) => x.dub !== wantDub));
   if (ordered[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
