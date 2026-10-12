@@ -35,6 +35,7 @@ const TEXTS = {
     noSources: "Activa al menos una fuente de anime.",
     rowOnAir: "{name} — En emisión",
     sectionHero: "Anime en emisión ahora.",
+    copyFailed: "Esta copia no se pudo abrir ahora. Prueba otro servidor del menú.",
     sub: "Subtitulado", dub: "Doblado",
     cacheStatus: "Caché: {n} entradas, {kb} KB", cacheCleared: "Listo: se vació la caché",
     healthOk: "ok", healthFail: "falla", healthNone: "sin datos", healthOff: "apagada",
@@ -52,6 +53,7 @@ const TEXTS = {
     noSources: "Turn on at least one anime source.",
     rowOnAir: "{name} — On Air",
     sectionHero: "Anime airing now.",
+    copyFailed: "This copy could not be opened right now. Try another server from the menu.",
     sub: "Subtitled", dub: "Dubbed",
     cacheStatus: "Cache: {n} entries, {kb} KB", cacheCleared: "Done: the cache is empty",
     healthOk: "ok", healthFail: "failing", healthNone: "no data", healthOff: "off",
@@ -549,26 +551,105 @@ function toStream(s) {
 const SITE = "https://animeav1.com";
 const HLS_PLAYER = /^https:\/\/player\.zilla-networks\.com\/play\/([a-f0-9]{16,64})$/;
 
-// [{ dub, id }] for the episode `slug`/`number` of AnimeAV1: one per language that lists an HLS server. Never throws.
-async function hlsCopies(slug, number) {
-  if (kino.config.get("hls") === false) return [];
+// What AnimeAV1's page of the episode `slug`/`number` lists that is worth a copy: { hls: [{ dub, id }], voe: [{ dub, url }] },
+// one of each per language that lists the server. Never throws.
+async function siteCopies(slug, number) {
+  const none = { hls: [], voe: [] };
+  if (kino.config.get("hls") === false) return none;
   try {
     const r = await kino.fetch(`${SITE}/media/${enc(slug)}/${number}`, { timeoutMs: LIST_TIMEOUT_MS });
-    if (!r.ok) return [];
+    if (!r.ok) return none;
     const block = /embeds\s*:\s*\{([\s\S]*?)\}\s*,\s*downloads/.exec(r.text());
-    if (!block) return [];
-    const out = [];
+    if (!block) return none;
+    const out = { hls: [], voe: [] };
     for (const lang of ["SUB", "DUB"]) {
       const list = new RegExp(lang + "\\s*:\\s*\\[([^\\]]*)\\]").exec(block[1]);
-      const hls = list && /server\s*:\s*"HLS"\s*,\s*url\s*:\s*"([^"]+)"/.exec(list[1]);
+      if (!list) continue;
+      const hls = /server\s*:\s*"HLS"\s*,\s*url\s*:\s*"([^"]+)"/.exec(list[1]);
       const id = hls && HLS_PLAYER.exec(hls[1]);
-      if (id) out.push({ dub: lang === "DUB", id: id[1] });
+      if (id) out.hls.push({ dub: lang === "DUB", id: id[1] });
+      const voe = /server\s*:\s*"Voe"\s*,\s*url\s*:\s*"([^"]+)"/.exec(list[1]);
+      if (voe && VOE_EMBED.test(voe[1])) out.voe.push({ dub: lang === "DUB", url: voe[1] });
     }
     return out;
   } catch (e) {
-    kino.log("hls lookup failed: " + (e && e.message));
+    kino.log("site lookup failed: " + (e && e.message));
+    return none;
+  }
+}
+
+// TioAnime lists its own servers in the episode page (`var videos = [["Voe","https://voe.sx/e/<id>",0,0],...]`):
+// the only way to a Voe copy for a title AnimeAV1 does not have. Never throws.
+async function tioanimeVoe(slug, number) {
+  if (kino.config.get("voe") === false) return [];
+  try {
+    const r = await kino.fetch(`https://tioanime.com/ver/${enc(slug)}-${number}`, { timeoutMs: LIST_TIMEOUT_MS });
+    if (!r.ok) return [];
+    const m = /var\s+videos\s*=\s*(\[[\s\S]*?\])\s*;/.exec(r.text());
+    const list = m ? JSON.parse(m[1]) : [];
+    const voe = list.find((v) => Array.isArray(v) && String(v[0]).toLowerCase() === "voe" && VOE_EMBED.test(String(v[1])));
+    return voe ? [{ dub: null, url: String(voe[1]) }] : [];
+  } catch (e) {
+    kino.log("tioanime lookup failed: " + (e && e.message));
     return [];
   }
+}
+
+// ---- Voe
+// The embed page redirects (by script) to a mirror whose page carries the player's data as a JSON array of one
+// obfuscated string: ROT13, junk markers removed, base64, every character shifted by 3, reversed, base64 again.
+const VOE_EMBED = /^https:\/\/[a-z0-9.-]+\/e\/[A-Za-z0-9]{6,40}$/;
+const VOE_JUNK = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"];
+
+function voeDecode(ct) {
+  let t = String(ct).replace(/[a-zA-Z]/g, (c) => {
+    const base = c <= "Z" ? 65 : 97;
+    return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+  });
+  for (const j of VOE_JUNK) t = t.split(j).join("");
+  const shifted = atob(t);
+  let u = "";
+  for (let i = shifted.length - 1; i >= 0; i--) u += String.fromCharCode(shifted.charCodeAt(i) - 3);
+  const bin = atob(u);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// The playlist of a Voe copy. Its address carries a token bound to this connection's address, so it is read here, on the
+// device that will play it.
+async function voeStream(embedUrl) {
+  if (!VOE_EMBED.test(String(embedUrl))) throw kino.error("not_found", "not a Voe embed: " + String(embedUrl).slice(0, 80));
+  let url = embedUrl;
+  let source = "";
+  for (let hop = 0; hop < 3 && !source; hop++) {
+    const r = await kino.fetch(url, { timeoutMs: RESOLVE_TIMEOUT_MS });
+    if (!r.ok) break;
+    const html = r.text();
+    const json = /<script[^>]*type="application\/json"[^>]*>\s*(\[[\s\S]*?\])\s*<\/script>/.exec(html);
+    if (json) {
+      try {
+        const data = voeDecode(JSON.parse(json[1])[0]);
+        if (data && typeof data.source === "string" && /^https:\/\//.test(data.source)) source = data.source;
+      } catch (e) {
+        kino.log("voe decode failed: " + (e && e.message));
+      }
+      break;
+    }
+    const next = /location\.href\s*=\s*'(https:\/\/[^']+)'/.exec(html);
+    if (!next) break;
+    url = next[1];
+  }
+  if (!source) {
+    kino.log.report("voe_failed", "no_source");
+    throw kino.error("unavailable", "Voe gave no playlist", { userMessage: t("copyFailed") });
+  }
+  return { url: source, mime: "application/x-mpegURL", expiresInSeconds: 3600 };
+}
+
+function voeEntry(c) {
+  const lang = c.dub === null ? "" : " · " + t(c.dub ? "dub" : "sub");
+  return { label: ("Voe" + lang).slice(0, 40), ref: "v:" + c.url };
 }
 
 function hlsStream(c) {
@@ -683,6 +764,8 @@ async function streamsOf(type, videoId, timeoutMs = RESOLVE_TIMEOUT_MS, attempts
 // minutes only matter when a playback fails: Kino then asks for a fresh link.
 // A film's single video is the addon's `<id>:1` (the id its meta lists too, though some films' meta lists none).
 export async function resolve(ref) {
+  const voe = /^v:(https:\/\/.+)$/.exec(String(ref || ""));
+  if (voe) return voeStream(voe[1]);
   const movie = movieIdOf(ref);
   const r = movie ? { type: "movie", id: movie + ":1" } : parseRef("e:", ref);
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
@@ -693,19 +776,33 @@ export async function resolve(ref) {
   let addonError = null;
   const askAddon = (ms, tries) => streamsOf(r.type, r.id, ms, tries).then((l) => ((addonError = null), l), (e) => ((addonError = e), []));
   const addonFirst = askAddon(ep ? ADDON_FAST_MS : RESOLVE_TIMEOUT_MS, ep ? 1 : 2);
-  let copies = ep ? await hlsCopies(ep.slug, ep.number) : [];
-  if (ep && !copies.length && !/^animeav1:/.test(r.id)) {
+  const tioVoe = ep && /^tioanime:/.test(r.id) ? tioanimeVoe(ep.slug, ep.number) : Promise.resolve([]);
+  let site = ep ? await siteCopies(ep.slug, ep.number) : { hls: [], voe: [] };
+  if (ep && !site.hls.length && !/^animeav1:/.test(r.id)) {
     const twin = await twinSlug(r.type, r.id.replace(/:\d+$/, ""), ep.slug);
-    if (twin && twin !== ep.slug) copies = await hlsCopies(twin, ep.number);
+    if (twin && twin !== ep.slug) site = await siteCopies(twin, ep.number);
   }
+  let copies = site.hls;
   if (copies.length && !(await hlsHealthy(copies[0].id))) copies = [];
+  // Voe copies are lazy: nothing is fetched for them until the person picks one (or nothing else can play).
+  const voeCopies = kino.config.get("voe") === false ? [] : site.voe.length ? site.voe : await tioVoe;
   let raw = await addonFirst;
   if (ep && !raw.length && !copies.length) raw = await askAddon(RESOLVE_TIMEOUT_MS, 1);
   const wantDubFirst = kino.config.get("audio") === "dub";
   const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
   if (!raw.length) {
     // The addon had nothing (it fails on some titles): the site's own HLS, when it lists one, is the only way to play.
-    if (hlsOrdered.length) return { ...hlsStream(hlsOrdered[0]), expiresInSeconds: 1800, alternatives: hlsOrdered.slice(1).map(hlsStream) };
+    if (hlsOrdered.length) {
+      const lazy = voeCopies.map(voeEntry);
+      return { ...hlsStream(hlsOrdered[0]), expiresInSeconds: 1800, alternatives: hlsOrdered.slice(1).map(hlsStream).concat(lazy) };
+    }
+    if (voeCopies.length) {
+      try {
+        return await voeStream(voeCopies[0].url);
+      } catch (e) {
+        kino.log("voe as the only copy failed: " + (e && e.message));
+      }
+    }
     throw addonError || kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
   }
   const seen = new Set();
@@ -724,7 +821,11 @@ export async function resolve(ref) {
   if (pool[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
   const [first, ...rest] = pool;
   const main = { ...first.stream, expiresInSeconds: 1800 };
-  const alternatives = rest.slice(0, 12).map((x) => x.stream);
+  // The fast copies first, then Voe (lazy), then the addon's copies.
+  const hlsSet = new Set(hls);
+  const ahead = rest.filter((x) => hlsSet.has(x));
+  const behind = rest.filter((x) => !hlsSet.has(x));
+  const alternatives = [...ahead.map((x) => x.stream), ...voeCopies.map(voeEntry), ...behind.map((x) => x.stream)].slice(0, 12);
   if (alternatives.length) main.alternatives = alternatives;
   return main;
 }

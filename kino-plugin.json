@@ -1,8 +1,8 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.3.0",
-  "apiVersion": 8,
+  "version": "1.4.0",
+  "apiVersion": 9,
   "entry": "plugin.js",
   "icon": "icon.png",
   "description": "Anime en español, doblado o subtitulado, desde AnimeAV1, Henaojara, TioAnime y JKAnime. Catálogo y enlaces del addon AnimES de Pigamer37.",
@@ -101,6 +101,13 @@
       "hint": "Más rápida y estable; aparece en el menú de servidores."
     },
     {
+      "key": "voe",
+      "type": "toggle",
+      "label": "Copia Voe (respaldo)",
+      "default": true,
+      "hint": "Segunda opción rápida; se abre solo si la eliges o si no hay otra."
+    },
+    {
       "key": "homeSection",
       "type": "section",
       "label": "Inicio"
@@ -139,5 +146,6 @@
       "confirm": "¿Vaciar la caché de listas y episodios?"
     }
   ],
-  "debug": true
+  "debug": true,
+  "fetchHosts": "any"
 }

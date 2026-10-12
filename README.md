@@ -94,19 +94,31 @@ Rekishi), JKAnime sin medir, y la velocidad del MP4Upload varía mucho de una pe
   quedan como alternativas.
 - **No probado:** un episodio completo de principio a fin, y otros aparatos (el Fire Stick fue el único).
 
-### Otros servidores de AnimeAV1 (investigados, sin implementar)
+### Copia Voe (respaldo, desde 1.4.0)
 
-La página del episodio lista además de HLS y MP4Upload a UPNShare, Voe y Byse. Medido desde un Mac, sin navegador:
+La página del episodio de AnimeAV1 lista además de HLS y MP4Upload a UPNShare, Voe y Byse. Medido desde un Mac, sin
+navegador:
 
-| Servidor | ¿Video sin navegador? | Velocidad | Veredicto |
+| Servidor | ¿Video sin navegador? | Velocidad | Estado |
 |---|---|---|---|
-| Voe | Sí: JSON ofuscado (ROT13 + base64) con `master.m3u8`, sin headers especiales | mediana 4.8 Mbit/s (HLS de AnimeAV1: ~14) | Viable como respaldo, no vale el riesgo ahora |
-| UPNShare | Sí: AES-CBC con clave pública fija; pide `Referer` | ~2.9 Mbit/s | Lenta, no compensa |
-| Byse | No: SPA cuyo endpoint de reproducción no responde por GET ni POST | — | No viable sin navegador |
+| Voe | Sí: JSON ofuscado con `master.m3u8`, sin headers especiales | mediana 4.8 Mbit/s (HLS de AnimeAV1: ~14) | **Implementado** como copia perezosa |
+| UPNShare | Sí: AES-CBC con clave pública fija; pide `Referer` | ~2.9 Mbit/s | Descartado: lenta |
+| Byse | No: SPA cuyo endpoint de reproducción no responde por GET ni POST | — | Descartado: pide navegador |
 
-Voe exigiría decodificar un formato que el sitio puede cambiar sin aviso y declarar hosts que rotan de dominio
-(`voe.sx` redirige a otro nombre), lo que pediría una aprobación nueva a quien actualice. Se descartó por ahora: el HLS
-de AnimeAV1 ya cubre lo que se medía, y MP4Upload sigue de alternativa.
+Cómo funciona Voe:
+
+- **Origen:** el embed sale de la página de AnimeAV1 y, para títulos que AnimeAV1 no tiene, de la página de TioAnime
+  (`var videos = [["Voe","https://voe.sx/e/<id>",…]]`). Henaojara carga su lista por AJAX y no se usa.
+- **Es perezosa:** aparece en el menú como `Voe · Subtitulado` y no se pide nada hasta que la eliges. Solo se resuelve
+  sola cuando es la única copia que queda.
+- **Resolución:** `voe.sx/e/<id>` redirige por script a un dominio espejo; esa página trae un arreglo JSON de una
+  cadena ofuscada: ROT13, quitar los marcadores `@$ ^^ ~@ %? *~ !! #&`, base64, desplazar cada carácter 3 y base64 de
+  nuevo. El JSON resultante trae `source`, el `master.m3u8` (HLS 720p).
+- **El token del playlist está atado a la IP** de quien pidió la página; por eso se lee en el propio dispositivo que
+  reproduce (no sirve para enviar a un Chromecast en otra red).
+- **Permisos:** el dominio espejo rota, así que el plugin declara `fetchHosts: "any"` (necesita `apiVersion` 9 y Kino
+  ≥ 0.9.55; los Kino anteriores lo rechazan al actualizar). Quien actualice verá una línea roja nueva de aprobación.
+- **Se apaga** con el ajuste **Copia Voe (respaldo)**.
 
 ### Riesgos conocidos
 
@@ -118,6 +130,8 @@ de AnimeAV1 ya cubre lo que se medía, y MP4Upload sigue de alternativa.
 - Los títulos sin página equivalente en AnimeAV1 siguen con las copias del addon. Una muestra de 34 episodios
   (primero, medio y último) dio 22 con HLS; los 12 restantes eran el episodio 2 de series en emisión que AnimeAV1 aún no
   tiene, y un título cuyo slug difiere (resuelto por nombre). La numeración coincide donde existe la página.
+- Voe depende de un formato ofuscado que el sitio puede cambiar sin aviso: si deja de decodificar, esa copia falla al
+  elegirla (mensaje "Esta copia no se pudo abrir ahora") y se reporta `voe_failed`; nada más se rompe.
 - Los segmentos llegan como `text/html` aunque son fMP4; ExoPlayer los lee por el playlist (`#EXT-X-MAP`).
 
 ### Cómo repetir la medición
