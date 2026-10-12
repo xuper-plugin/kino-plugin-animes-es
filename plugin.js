@@ -17,6 +17,12 @@ const RESOLVE_TIMEOUT_MS = 8000;
 // With the site's own HLS copy in hand the addon only adds alternatives, so its first try gets this long and no more
 // (the host waits for every request in flight, so a request left behind would still hold the answer back).
 const ADDON_FAST_MS = 2500;
+// A source's title that has no AnimeAV1 page under its own slug is looked up by name once, then remembered.
+const TWIN_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+// The HLS copy hangs on a Cloudflare rule outside our control: one probe of its first segment, remembered for a while.
+const HLS_HEALTH_KEY = "hlsHealth";
+const HLS_HEALTH_OK_MS = 10 * 60 * 1000;
+const HLS_HEALTH_BAD_MS = 3 * 60 * 1000;
 
 // ---- 1. texts -------------------------------------------------------------------------------------------------
 
@@ -574,6 +580,67 @@ function hlsStream(c) {
   };
 }
 
+// Does the HLS server still serve its segments to a request carrying our header? One cheap probe (the playlist, then a
+// kilobyte of its first segment), shared by every episode. A blocked answer (403) turns the copy off for a few minutes
+// and is reported; a network failure proves nothing, so it never turns the copy off.
+async function hlsHealthy(id) {
+  let known = null;
+  try {
+    known = JSON.parse(kino.storage.get(HLS_HEALTH_KEY) || "null");
+  } catch {
+    known = null;
+  }
+  if (known && typeof known.at === "number" && Date.now() - known.at < (known.ok ? HLS_HEALTH_OK_MS : HLS_HEALTH_BAD_MS)) return !!known.ok;
+  let ok = true;
+  let status = 0;
+  try {
+    const pl = await kino.fetch(`https://player.zilla-networks.com/m3u8/${id}`, { timeoutMs: 4000 });
+    status = pl.status;
+    if (pl.ok) {
+      const seg = /https:\/\/player\.zilla-networks\.com\/segs\/[^\s"']+/.exec(pl.text());
+      if (seg) {
+        const r = await kino.fetch(seg[0], { headers: { "Sec-Fetch-Site": "same-origin", Range: "bytes=0-1023" }, timeoutMs: 4000 });
+        status = r.status;
+        ok = r.status === 200 || r.status === 206 || (r.status !== 401 && r.status !== 403);
+      }
+    } else {
+      ok = pl.status !== 401 && pl.status !== 403;
+    }
+  } catch {
+    return true;
+  }
+  try {
+    kino.storage.set(HLS_HEALTH_KEY, JSON.stringify({ at: Date.now(), ok }), { ttlMs: HLS_HEALTH_OK_MS });
+  } catch {
+    // a full storage: the next play probes again
+  }
+  if (!ok) kino.log.report("hls_blocked", String(status));
+  return ok;
+}
+
+// Letters and digits only, no accents: "Megami-sama" and "Megamisama" read the same.
+function normTitle(s) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
+}
+
+// The AnimeAV1 slug of a title another source lists under a slug AnimeAV1 does not use: found by name in the addon's
+// AnimeAV1 catalog, accepted only on an exact match of the letters. "" when there is none (remembered too).
+async function twinSlug(type, seriesId, slug) {
+  try {
+    return await cached("twin:" + slug, TWIN_FRESH_MS, async () => {
+      const meta = await metaOf(type, seriesId);
+      const want = normTitle(meta.title);
+      if (!want) return "";
+      const body = await getJson(searchUrl(SOURCES[0], meta.title), LIST_TIMEOUT_MS);
+      const hit = (body && Array.isArray(body.metas) ? body.metas : []).find((m) => m && /^animeav1:/.test(String(m.id)) && normTitle(m.name) === want);
+      return hit ? String(hit.id).slice("animeav1:".length) : "";
+    });
+  } catch (e) {
+    kino.log("twin lookup failed: " + (e && e.message));
+    return "";
+  }
+}
+
 // The slug and episode number of a video id ("<source>:<slug>:<n>"). The sources share slugs for most titles, so any
 // source's episode is looked up on AnimeAV1 too: a miss is just a 404 there and the episode keeps its own copies.
 function animeav1Episode(videoId) {
@@ -626,7 +693,12 @@ export async function resolve(ref) {
   let addonError = null;
   const askAddon = (ms, tries) => streamsOf(r.type, r.id, ms, tries).then((l) => ((addonError = null), l), (e) => ((addonError = e), []));
   const addonFirst = askAddon(ep ? ADDON_FAST_MS : RESOLVE_TIMEOUT_MS, ep ? 1 : 2);
-  const copies = ep ? await hlsCopies(ep.slug, ep.number) : [];
+  let copies = ep ? await hlsCopies(ep.slug, ep.number) : [];
+  if (ep && !copies.length && !/^animeav1:/.test(r.id)) {
+    const twin = await twinSlug(r.type, r.id.replace(/:\d+$/, ""), ep.slug);
+    if (twin && twin !== ep.slug) copies = await hlsCopies(twin, ep.number);
+  }
+  if (copies.length && !(await hlsHealthy(copies[0].id))) copies = [];
   let raw = await addonFirst;
   if (ep && !raw.length && !copies.length) raw = await askAddon(RESOLVE_TIMEOUT_MS, 1);
   const wantDubFirst = kino.config.get("audio") === "dub";
