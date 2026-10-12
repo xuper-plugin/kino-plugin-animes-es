@@ -608,8 +608,8 @@ async function streamsOf(type, videoId) {
   return [];
 }
 
-// The person's audio preference goes first; the rest are the Server menu's other copies. The 30 minutes only matter when a
-// playback fails: Kino then asks for a fresh link.
+// The person's audio preference goes first, then the fast HLS copy; the rest are the Server menu's other copies. The 30
+// minutes only matter when a playback fails: Kino then asks for a fresh link.
 // A film's single video is the addon's `<id>:1` (the id its meta lists too, though some films' meta lists none).
 export async function resolve(ref) {
   const movie = movieIdOf(ref);
@@ -628,12 +628,19 @@ export async function resolve(ref) {
   const all = raw.map(toStream).filter((x) => (seen.has(x.stream.url) ? false : (seen.add(x.stream.url), true)));
   tellApart(all);
   const wantDub = kino.config.get("audio") === "dub";
-  const ordered = all.filter((x) => x.dub === wantDub).concat(all.filter((x) => x.dub !== wantDub));
-  if (ordered[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
-  const [first, ...rest] = ordered;
+  // The person's audio first; within the same audio the HLS copy (fast, a CDN) goes before the addon's MP4Upload copies
+  // (throttled per node). The rest stay in the Server menu.
+  const hls = hlsOrdered.map((c) => ({ dub: c.dub, stream: hlsStream(c) }));
+  const pool = [
+    ...hls.filter((x) => x.dub === wantDub),
+    ...all.filter((x) => x.dub === wantDub),
+    ...hls.filter((x) => x.dub !== wantDub),
+    ...all.filter((x) => x.dub !== wantDub),
+  ];
+  if (pool[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
+  const [first, ...rest] = pool;
   const main = { ...first.stream, expiresInSeconds: 1800 };
-  const hlsAlts = hlsOrdered.map(hlsStream);
-  const alternatives = hlsAlts.concat(rest.slice(0, 11).map((x) => x.stream));
+  const alternatives = rest.slice(0, 12).map((x) => x.stream);
   if (alternatives.length) main.alternatives = alternatives;
   return main;
 }
