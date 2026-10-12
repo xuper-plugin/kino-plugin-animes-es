@@ -553,37 +553,6 @@ function tellApart(list) {
   }
 }
 
-// Speed probe. A video server throttles per node (measured: the same title's copies gave 8.7 and 0.65 Mbit/s), and the
-// player only moves to another copy when one FAILS, never when one is slow. Before answering, the first 384 KB of each copy
-// of the preferred audio is asked for at once (from this device, so the number is the person's own network) and the copies
-// go fastest first. Bounded: a copy that has not answered in 5 s is last; with fewer than two copies, or when the backend
-// already took most of resolve's 20 s, nothing is probed. A copy the probe cannot reach (a host not declared, a refusal)
-// keeps its place after the measured ones: unknown is not dead.
-const PROBE_BYTES = 393216;
-const PROBE_TIMEOUT_MS = 5000;
-const PROBE_MAX_COPIES = 5;
-const PROBE_SKIP_AFTER_MS = 9000;
-
-async function probeMs(stream) {
-  const t0 = Date.now();
-  try {
-    const headers = Object.assign({}, stream.headers, { Range: "bytes=0-" + (PROBE_BYTES - 1) });
-    const r = await kino.fetch(stream.url, { headers, timeoutMs: PROBE_TIMEOUT_MS });
-    return r.ok ? Date.now() - t0 : Infinity;
-  } catch {
-    return Infinity;
-  }
-}
-
-async function fastestFirst(list, startedAt) {
-  if (list.length < 2 || Date.now() - startedAt > PROBE_SKIP_AFTER_MS) return list;
-  const head = list.slice(0, PROBE_MAX_COPIES);
-  const times = await mapLimit(head, PROBE_MAX_COPIES, (x) => probeMs(x.stream));
-  kino.log("probe ms: " + head.map((x, i) => x.stream.label + "=" + (times[i] === Infinity ? "slow" : times[i])).join(", "));
-  const order = head.map((x, i) => ({ x, ms: times[i], i })).sort((a, b) => (a.ms === b.ms ? a.i - b.i : a.ms - b.ms));
-  return order.map((o) => o.x).concat(list.slice(PROBE_MAX_COPIES));
-}
-
 // The backend scrapes the sites live: an empty answer is often a hiccup, so it is asked once more before giving up.
 async function streamsOf(type, videoId) {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -599,7 +568,6 @@ async function streamsOf(type, videoId) {
 // playback fails: Kino then asks for a fresh link.
 // A film's single video is the addon's `<id>:1` (the id its meta lists too, though some films' meta lists none).
 export async function resolve(ref) {
-  const startedAt = Date.now();
   const movie = movieIdOf(ref);
   const r = movie ? { type: "movie", id: movie + ":1" } : parseRef("e:", ref);
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
@@ -609,8 +577,7 @@ export async function resolve(ref) {
   const all = raw.map(toStream).filter((x) => (seen.has(x.stream.url) ? false : (seen.add(x.stream.url), true)));
   tellApart(all);
   const wantDub = kino.config.get("audio") === "dub";
-  const mine = await fastestFirst(all.filter((x) => x.dub === wantDub), startedAt);
-  const ordered = mine.concat(all.filter((x) => x.dub !== wantDub));
+  const ordered = all.filter((x) => x.dub === wantDub).concat(all.filter((x) => x.dub !== wantDub));
   if (ordered[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
   const [first, ...rest] = ordered;
   const main = { ...first.stream, expiresInSeconds: 1800 };
