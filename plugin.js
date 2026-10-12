@@ -566,12 +566,13 @@ async function hlsCopies(slug, number) {
   }
 }
 
-// The playlist of an HLS copy, opened in the hidden page. The playlist's address has no ".m3u8" (`/m3u8/<id>`), so the
-// default match would never see it.
-async function captureHls(id) {
+// The playlist of an HLS copy, opened via the episode page so the player is inside an iframe (it checks
+// window.self !== window.top and throws "Content not found." when opened as a top-level page). The match targets the
+// specific playlist URL `/m3u8/<id>` (no `.m3u8` extension) so only the right language is caught.
+async function captureHls(id, slug, number) {
   let page;
   try {
-    page = await kino.browser.capture(`https://player.zilla-networks.com/play/${id}`, { match: "/m3u8/", timeoutMs: 20000, headers: { Referer: SITE + "/" } });
+    page = await kino.browser.capture(`${SITE}/media/${enc(slug)}/${number}`, { match: `/m3u8/${id}`, timeoutMs: 20000 });
   } catch (e) {
     kino.log.report("hls_capture_failed", String((e && e.code) || "error"));
     throw kino.error("unavailable", "HLS capture failed: " + String((e && e.code) || e && e.message).slice(0, 80), { userMessage: t("hlsFailed") });
@@ -627,8 +628,8 @@ async function streamsOf(type, videoId) {
 // playback fails: Kino then asks for a fresh link.
 // A film's single video is the addon's `<id>:1` (the id its meta lists too, though some films' meta lists none).
 export async function resolve(ref) {
-  const hls = /^h:([a-f0-9]{16,64})$/.exec(String(ref || ""));
-  if (hls) return captureHls(hls[1]);
+  const hls = /^h:([a-f0-9]{16,64})\/([^/]+)\/(\d+)$/.exec(String(ref || ""));
+  if (hls) return captureHls(hls[1], hls[2], hls[3]);
   const movie = movieIdOf(ref);
   const r = movie ? { type: "movie", id: movie + ":1" } : parseRef("e:", ref);
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
@@ -638,7 +639,7 @@ export async function resolve(ref) {
   const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
   if (!raw.length) {
     // The addon had nothing (it fails on some titles): the site's own HLS, when it lists one, is the only way to play.
-    if (hlsOrdered.length) return captureHls(hlsOrdered[0].id);
+    if (hlsOrdered.length) return captureHls(hlsOrdered[0].id, ep.slug, ep.number);
     throw kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
   }
   const seen = new Set();
@@ -649,7 +650,7 @@ export async function resolve(ref) {
   if (ordered[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
   const [first, ...rest] = ordered;
   const main = { ...first.stream, expiresInSeconds: 1800 };
-  const lazy = hlsOrdered.map((c) => ({ label: ("HLS · AnimeAV1 · " + t(c.dub ? "dub" : "sub")).slice(0, 40), ref: "h:" + c.id }));
+  const lazy = hlsOrdered.map((c) => ({ label: ("HLS · AnimeAV1 · " + t(c.dub ? "dub" : "sub")).slice(0, 40), ref: `h:${c.id}/${ep.slug}/${ep.number}` }));
   const alternatives = lazy.concat(rest.slice(0, 11).map((x) => x.stream));
   if (alternatives.length) main.alternatives = alternatives;
   return main;
