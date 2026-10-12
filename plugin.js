@@ -571,9 +571,10 @@ function hlsStream(c) {
   };
 }
 
-// The slug and episode number of an AnimeAV1 video id ("animeav1:<slug>:<n>", or a film's "animeav1:<slug>:1").
+// The slug and episode number of a video id ("<source>:<slug>:<n>"). The sources share slugs for most titles, so any
+// source's episode is looked up on AnimeAV1 too: a miss is just a 404 there and the episode keeps its own copies.
 function animeav1Episode(videoId) {
-  const m = /^animeav1:(.+):(\d{1,5})$/.exec(String(videoId || ""));
+  const m = /^(?:animeav1|henaojara|tioanime|jkanime):(.+):(\d{1,5})$/.exec(String(videoId || ""));
   return m ? { slug: m[1], number: m[2] } : null;
 }
 
@@ -616,13 +617,18 @@ export async function resolve(ref) {
   const r = movie ? { type: "movie", id: movie + ":1" } : parseRef("e:", ref);
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
   const ep = animeav1Episode(r.id);
-  const [raw, copies] = await Promise.all([streamsOf(r.type, r.id), ep ? hlsCopies(ep.slug, ep.number) : []]);
+  // The addon failing must not take the site's own HLS down with it: its error is kept for when nothing else plays.
+  let addonError = null;
+  const [raw, copies] = await Promise.all([
+    streamsOf(r.type, r.id).catch((e) => ((addonError = e), [])),
+    ep ? hlsCopies(ep.slug, ep.number) : [],
+  ]);
   const wantDubFirst = kino.config.get("audio") === "dub";
   const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
   if (!raw.length) {
     // The addon had nothing (it fails on some titles): the site's own HLS, when it lists one, is the only way to play.
     if (hlsOrdered.length) return { ...hlsStream(hlsOrdered[0]), expiresInSeconds: 1800, alternatives: hlsOrdered.slice(1).map(hlsStream) };
-    throw kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
+    throw addonError || kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
   }
   const seen = new Set();
   const all = raw.map(toStream).filter((x) => (seen.has(x.stream.url) ? false : (seen.add(x.stream.url), true)));
