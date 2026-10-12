@@ -14,6 +14,8 @@ const GENRE_PAGE = 20;
 const LIST_TIMEOUT_MS = 8000;
 // resolve has 20 s in all: two tries of 8 s and a short pause.
 const RESOLVE_TIMEOUT_MS = 8000;
+// With the site's own HLS copy in hand the addon only adds alternatives: it gets this long to answer, no more.
+const ADDON_GRACE_MS = 1500;
 
 // ---- 1. texts -------------------------------------------------------------------------------------------------
 
@@ -619,10 +621,9 @@ export async function resolve(ref) {
   const ep = animeav1Episode(r.id);
   // The addon failing must not take the site's own HLS down with it: its error is kept for when nothing else plays.
   let addonError = null;
-  const [raw, copies] = await Promise.all([
-    streamsOf(r.type, r.id).catch((e) => ((addonError = e), [])),
-    ep ? hlsCopies(ep.slug, ep.number) : [],
-  ]);
+  const addonCopies = streamsOf(r.type, r.id).catch((e) => ((addonError = e), []));
+  const copies = ep ? await hlsCopies(ep.slug, ep.number) : [];
+  const raw = copies.length ? await Promise.race([addonCopies, kino.sleep(ADDON_GRACE_MS).then(() => [])]) : await addonCopies;
   const wantDubFirst = kino.config.get("audio") === "dub";
   const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
   if (!raw.length) {
