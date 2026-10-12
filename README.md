@@ -118,6 +118,8 @@ Cómo funciona Voe:
   reproduce (no sirve para enviar a un Chromecast en otra red).
 - **Permisos:** el dominio espejo rota, así que el plugin declara `fetchHosts: "any"` (necesita `apiVersion` 9 y Kino
   ≥ 0.9.55; los Kino anteriores lo rechazan al actualizar). Quien actualice verá una línea roja nueva de aprobación.
+- **Enlaces muertos:** Voe retira enlaces (uno de cada cinco episodios del título de prueba daba 404). Antes de ofrecer
+  la copia se comprueba el embed (en paralelo, y se recuerda 1 h): si está caído no aparece en el menú.
 - **Se apaga** con el ajuste **Copia Voe (respaldo)**.
 
 ### Riesgos conocidos

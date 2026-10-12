@@ -616,6 +616,19 @@ function voeDecode(ct) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+// Voe takes links down (about one episode in five here): a dead embed answers 404, and is not offered. Remembered an hour;
+// when it cannot be told, it stays.
+async function voeAlive(url) {
+  try {
+    return await cached("voe:" + String(url).split("/").pop(), 60 * 60 * 1000, async () => {
+      const r = await kino.fetch(url, { timeoutMs: 3000 });
+      return r.status !== 404 && r.status !== 410;
+    });
+  } catch {
+    return true;
+  }
+}
+
 // The playlist of a Voe copy. Its address carries a token bound to this connection's address, so it is read here, on the
 // device that will play it.
 async function voeStream(embedUrl) {
@@ -785,7 +798,9 @@ export async function resolve(ref) {
   let copies = site.hls;
   if (copies.length && !(await hlsHealthy(copies[0].id))) copies = [];
   // Voe copies are lazy: nothing is fetched for them until the person picks one (or nothing else can play).
-  const voeCopies = kino.config.get("voe") === false ? [] : site.voe.length ? site.voe : await tioVoe;
+  const voeWanted = kino.config.get("voe") === false ? [] : site.voe.length ? site.voe : await tioVoe;
+  const voeLive = await Promise.all(voeWanted.map((c) => voeAlive(c.url)));
+  const voeCopies = voeWanted.filter((_, i) => voeLive[i]);
   let raw = await addonFirst;
   if (ep && !raw.length && !copies.length) raw = await askAddon(RESOLVE_TIMEOUT_MS, 1);
   const wantDubFirst = kino.config.get("audio") === "dub";
