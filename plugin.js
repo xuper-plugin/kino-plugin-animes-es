@@ -30,6 +30,7 @@ const TEXTS = {
     cacheStatus: "Caché: {n} entradas, {kb} KB", cacheCleared: "Listo: se vació la caché",
     healthOk: "ok", healthFail: "falla", healthNone: "sin datos", healthOff: "apagada",
     probeDone: "Listo: {ok} de {n} fuentes responden",
+    hlsFailed: "Esta copia no se pudo abrir ahora. Prueba otro servidor del menú.",
     genre_accion: "Acción", genre_aventura: "Aventura", genre_comedia: "Comedia", genre_drama: "Drama",
     genre_fantasia: "Fantasía", genre_romance: "Romance", genre_ciencia_ficcion: "Ciencia ficción",
     genre_misterio: "Misterio", genre_terror: "Terror", genre_mecha: "Mecha", genre_magia: "Magia",
@@ -47,6 +48,7 @@ const TEXTS = {
     cacheStatus: "Cache: {n} entries, {kb} KB", cacheCleared: "Done: the cache is empty",
     healthOk: "ok", healthFail: "failing", healthNone: "no data", healthOff: "off",
     probeDone: "Done: {ok} of {n} sources answer",
+    hlsFailed: "This copy could not be opened right now. Try another server from the menu.",
     genre_accion: "Action", genre_aventura: "Adventure", genre_comedia: "Comedy", genre_drama: "Drama",
     genre_fantasia: "Fantasy", genre_romance: "Romance", genre_ciencia_ficcion: "Sci-Fi",
     genre_misterio: "Mystery", genre_terror: "Horror", genre_mecha: "Mecha", genre_magia: "Magic",
@@ -533,6 +535,63 @@ function toStream(s) {
   return { dub, stream: out };
 }
 
+// HLS copies (AnimeAV1's own player). The addon only hands out MP4Upload, which throttles per node, while the site itself
+// also lists an HLS server (player.zilla-networks.com) whose segments sit behind Cloudflare's browser check: a plain request
+// gets a 403 there, a real WebView passes. So the copy is found by reading the episode page (kino.fetch) and OPENED with
+// kino.browser.capture, which hands back the playlist with the headers and cookies the page used; the player sends them
+// on. Opening a page takes seconds, so the copy is LAZY (`{ label, ref }`): Kino resolves it only when the person picks
+// it in the Server menu, or when the addon had nothing at all (then it is the only way to play).
+const SITE = "https://animeav1.com";
+const HLS_PLAYER = /^https:\/\/player\.zilla-networks\.com\/play\/([a-f0-9]{16,64})$/;
+
+// [{ dub, id }] for the episode `slug`/`number` of AnimeAV1: one per language that lists an HLS server. Never throws.
+async function hlsCopies(slug, number) {
+  if (kino.config.get("hls") === false) return [];
+  try {
+    const r = await kino.fetch(`${SITE}/media/${enc(slug)}/${number}`, { timeoutMs: LIST_TIMEOUT_MS });
+    if (!r.ok) return [];
+    const block = /embeds\s*:\s*\{([\s\S]*?)\}\s*,\s*downloads/.exec(r.text());
+    if (!block) return [];
+    const out = [];
+    for (const lang of ["SUB", "DUB"]) {
+      const list = new RegExp(lang + "\\s*:\\s*\\[([^\\]]*)\\]").exec(block[1]);
+      const hls = list && /server\s*:\s*"HLS"\s*,\s*url\s*:\s*"([^"]+)"/.exec(list[1]);
+      const id = hls && HLS_PLAYER.exec(hls[1]);
+      if (id) out.push({ dub: lang === "DUB", id: id[1] });
+    }
+    return out;
+  } catch (e) {
+    kino.log("hls lookup failed: " + (e && e.message));
+    return [];
+  }
+}
+
+// The playlist of an HLS copy, opened in the hidden page. The playlist's address has no ".m3u8" (`/m3u8/<id>`), so the
+// default match would never see it.
+async function captureHls(id) {
+  let page;
+  try {
+    page = await kino.browser.capture(`https://player.zilla-networks.com/play/${id}`, { match: "/m3u8/", timeoutMs: 20000, headers: { Referer: SITE + "/" } });
+  } catch (e) {
+    kino.log.report("hls_capture_failed", String((e && e.code) || "error"));
+    throw kino.error("unavailable", "HLS capture failed: " + String((e && e.code) || e && e.message).slice(0, 80), { userMessage: t("hlsFailed") });
+  }
+  const media = page && page.media && page.media[0];
+  if (!media || !media.url) {
+    kino.log.report("hls_capture_failed", "no_media");
+    throw kino.error("not_found", "the hidden page showed no playlist", { userMessage: t("hlsFailed") });
+  }
+  const out = { url: media.url, mime: "application/x-mpegURL", expiresInSeconds: 1800 };
+  if (media.headers) out.headers = media.headers;
+  return out;
+}
+
+// The slug and episode number of an AnimeAV1 video id ("animeav1:<slug>:<n>", or a film's "animeav1:<slug>:1").
+function animeav1Episode(videoId) {
+  const m = /^animeav1:(.+):(\d{1,5})$/.exec(String(videoId || ""));
+  return m ? { slug: m[1], number: m[2] } : null;
+}
+
 // Copies that read the same ("MP4Upload · Subtitulado" twice) are told apart in the Server menu by their node ("a1", "a3")
 // when the hosts differ, else by their position ("#2"): a person whose first copy crawls needs to know which one to pick.
 function tellApart(list) {
@@ -568,11 +627,20 @@ async function streamsOf(type, videoId) {
 // playback fails: Kino then asks for a fresh link.
 // A film's single video is the addon's `<id>:1` (the id its meta lists too, though some films' meta lists none).
 export async function resolve(ref) {
+  const hls = /^h:([a-f0-9]{16,64})$/.exec(String(ref || ""));
+  if (hls) return captureHls(hls[1]);
   const movie = movieIdOf(ref);
   const r = movie ? { type: "movie", id: movie + ":1" } : parseRef("e:", ref);
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
-  const raw = await streamsOf(r.type, r.id);
-  if (!raw.length) throw kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
+  const ep = animeav1Episode(r.id);
+  const [raw, copies] = await Promise.all([streamsOf(r.type, r.id), ep ? hlsCopies(ep.slug, ep.number) : []]);
+  const wantDubFirst = kino.config.get("audio") === "dub";
+  const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
+  if (!raw.length) {
+    // The addon had nothing (it fails on some titles): the site's own HLS, when it lists one, is the only way to play.
+    if (hlsOrdered.length) return captureHls(hlsOrdered[0].id);
+    throw kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
+  }
   const seen = new Set();
   const all = raw.map(toStream).filter((x) => (seen.has(x.stream.url) ? false : (seen.add(x.stream.url), true)));
   tellApart(all);
@@ -581,7 +649,9 @@ export async function resolve(ref) {
   if (ordered[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
   const [first, ...rest] = ordered;
   const main = { ...first.stream, expiresInSeconds: 1800 };
-  if (rest.length) main.alternatives = rest.slice(0, 11).map((x) => x.stream);
+  const lazy = hlsOrdered.map((c) => ({ label: ("HLS · AnimeAV1 · " + t(c.dub ? "dub" : "sub")).slice(0, 40), ref: "h:" + c.id }));
+  const alternatives = lazy.concat(rest.slice(0, 11).map((x) => x.stream));
+  if (alternatives.length) main.alternatives = alternatives;
   return main;
 }
 

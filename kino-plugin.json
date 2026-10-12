@@ -1,7 +1,7 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "apiVersion": 8,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -9,7 +9,9 @@
   "author": "xuper-plugin",
   "homepage": "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime/manifest.json",
   "hosts": [
-    "pigamer37.alwaysdata.net"
+    "pigamer37.alwaysdata.net",
+    "animeav1.com",
+    "player.zilla-networks.com"
   ],
   "capabilities": [
     "search",
@@ -92,6 +94,13 @@
       "hint": "Apagada: su servidor no devuelve episodios ni búsquedas por ahora."
     },
     {
+      "key": "hls",
+      "type": "toggle",
+      "label": "Copia HLS de AnimeAV1",
+      "default": true,
+      "hint": "Más estable; abre una página oculta y tarda unos segundos."
+    },
+    {
       "key": "homeSection",
       "type": "section",
       "label": "Inicio"
@@ -129,5 +138,6 @@
       "label": "Vaciar caché",
       "confirm": "¿Vaciar la caché de listas y episodios?"
     }
-  ]
+  ],
+  "browser": true
 }
