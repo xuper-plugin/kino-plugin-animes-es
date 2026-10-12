@@ -84,6 +84,30 @@ hasta el primer byte; segmentos HLS de 10 a 17 Mbit/s. Desde un Mac: MP4Upload d
 Límites de esta medición: una corrida por fuente y ~1 minuto de reproducción, un solo título (Tensei Akujo no Kuro
 Rekishi), JKAnime sin medir, y la velocidad del MP4Upload varía mucho de una petición a otra.
 
+### Validación de la 1.3.0 (mismo aparato)
+
+- **Corrida larga:** AnimeAV1 5 minutos seguidos sin tocar el control: 0 cortes, 0 problemas, 50 MB descargados en
+  ráfagas de 4–7 Mbit/s cada ~35 s (el reproductor rellena su buffer).
+- **Saltos:** 18 saltos de +10 s encadenados; cada recuperación tardó entre 0.3 y 0.6 s, sin errores.
+- **Otro título:** *Dragon Ball Super: Beerus* en AnimeAV1 y en TioAnime: resolve de 0.9 a 1.4 s, primer cuadro en
+  ~1.3 s, 0 cortes, ~47 MB en 60 s con ráfagas de hasta 20 Mbit/s; las copias del addon (MP4Upload y YourUpload)
+  quedan como alternativas.
+- **No probado:** un episodio completo de principio a fin, y otros aparatos (el Fire Stick fue el único).
+
+### Otros servidores de AnimeAV1 (investigados, sin implementar)
+
+La página del episodio lista además de HLS y MP4Upload a UPNShare, Voe y Byse. Medido desde un Mac, sin navegador:
+
+| Servidor | ¿Video sin navegador? | Velocidad | Veredicto |
+|---|---|---|---|
+| Voe | Sí: JSON ofuscado (ROT13 + base64) con `master.m3u8`, sin headers especiales | mediana 4.8 Mbit/s (HLS de AnimeAV1: ~14) | Viable como respaldo, no vale el riesgo ahora |
+| UPNShare | Sí: AES-CBC con clave pública fija; pide `Referer` | ~2.9 Mbit/s | Lenta, no compensa |
+| Byse | No: SPA cuyo endpoint de reproducción no responde por GET ni POST | — | No viable sin navegador |
+
+Voe exigiría decodificar un formato que el sitio puede cambiar sin aviso y declarar hosts que rotan de dominio
+(`voe.sx` redirige a otro nombre), lo que pediría una aprobación nueva a quien actualice. Se descartó por ahora: el HLS
+de AnimeAV1 ya cubre lo que se medía, y MP4Upload sigue de alternativa.
+
 ### Riesgos conocidos
 
 - Depende de una regla de Cloudflare ajena: si cambia lo que mira (hoy `Sec-Fetch-Site`), el plugin lo detecta con la
