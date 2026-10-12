@@ -30,7 +30,6 @@ const TEXTS = {
     cacheStatus: "Caché: {n} entradas, {kb} KB", cacheCleared: "Listo: se vació la caché",
     healthOk: "ok", healthFail: "falla", healthNone: "sin datos", healthOff: "apagada",
     probeDone: "Listo: {ok} de {n} fuentes responden",
-    hlsFailed: "Esta copia no se pudo abrir ahora. Prueba otro servidor del menú.",
     genre_accion: "Acción", genre_aventura: "Aventura", genre_comedia: "Comedia", genre_drama: "Drama",
     genre_fantasia: "Fantasía", genre_romance: "Romance", genre_ciencia_ficcion: "Ciencia ficción",
     genre_misterio: "Misterio", genre_terror: "Terror", genre_mecha: "Mecha", genre_magia: "Magia",
@@ -48,7 +47,6 @@ const TEXTS = {
     cacheStatus: "Cache: {n} entries, {kb} KB", cacheCleared: "Done: the cache is empty",
     healthOk: "ok", healthFail: "failing", healthNone: "no data", healthOff: "off",
     probeDone: "Done: {ok} of {n} sources answer",
-    hlsFailed: "This copy could not be opened right now. Try another server from the menu.",
     genre_accion: "Action", genre_aventura: "Adventure", genre_comedia: "Comedy", genre_drama: "Drama",
     genre_fantasia: "Fantasy", genre_romance: "Romance", genre_ciencia_ficcion: "Sci-Fi",
     genre_misterio: "Mystery", genre_terror: "Horror", genre_mecha: "Mecha", genre_magia: "Magic",
@@ -536,11 +534,9 @@ function toStream(s) {
 }
 
 // HLS copies (AnimeAV1's own player). The addon only hands out MP4Upload, which throttles per node, while the site itself
-// also lists an HLS server (player.zilla-networks.com) whose segments sit behind Cloudflare's browser check: a plain request
-// gets a 403 there, a real WebView passes. So the copy is found by reading the episode page (kino.fetch) and OPENED with
-// kino.browser.capture, which hands back the playlist with the headers and cookies the page used; the player sends them
-// on. Opening a page takes seconds, so the copy is LAZY (`{ label, ref }`): Kino resolves it only when the person picks
-// it in the Server menu, or when the addon had nothing at all (then it is the only way to play).
+// also lists an HLS server (player.zilla-networks.com) that measured 35-43 Mbit/s. The copy is found by reading the episode
+// page (kino.fetch). Its playlist `/m3u8/<id>` answers a plain request; its segments answer 403 (a Cloudflare rule) unless the
+// request carries `Sec-Fetch-Site: same-origin`, so the stream is the playlist plus that header: no hidden page involved.
 const SITE = "https://animeav1.com";
 const HLS_PLAYER = /^https:\/\/player\.zilla-networks\.com\/play\/([a-f0-9]{16,64})$/;
 
@@ -566,25 +562,13 @@ async function hlsCopies(slug, number) {
   }
 }
 
-// The playlist of an HLS copy, opened via the episode page so the player is inside an iframe (it checks
-// window.self !== window.top and throws "Content not found." when opened as a top-level page). The match targets the
-// specific playlist URL `/m3u8/<id>` (no `.m3u8` extension) so only the right language is caught.
-async function captureHls(id, slug, number) {
-  let page;
-  try {
-    page = await kino.browser.capture(`${SITE}/media/${enc(slug)}/${number}`, { match: `/m3u8/${id}`, timeoutMs: 20000 });
-  } catch (e) {
-    kino.log.report("hls_capture_failed", String((e && e.code) || "error"));
-    throw kino.error("unavailable", "HLS capture failed: " + String((e && e.code) || e && e.message).slice(0, 80), { userMessage: t("hlsFailed") });
-  }
-  const media = page && page.media && page.media[0];
-  if (!media || !media.url) {
-    kino.log.report("hls_capture_failed", "no_media");
-    throw kino.error("not_found", "the hidden page showed no playlist", { userMessage: t("hlsFailed") });
-  }
-  const out = { url: media.url, mime: "application/x-mpegURL", expiresInSeconds: 1800 };
-  out.headers = Object.assign({}, media.headers, { "Sec-Fetch-Site": "same-origin" });
-  return out;
+function hlsStream(c) {
+  return {
+    url: `https://player.zilla-networks.com/m3u8/${c.id}`,
+    label: ("HLS · AnimeAV1 · " + t(c.dub ? "dub" : "sub")).slice(0, 40),
+    mime: "application/x-mpegURL",
+    headers: { "Sec-Fetch-Site": "same-origin" },
+  };
 }
 
 // The slug and episode number of an AnimeAV1 video id ("animeav1:<slug>:<n>", or a film's "animeav1:<slug>:1").
@@ -628,8 +612,6 @@ async function streamsOf(type, videoId) {
 // playback fails: Kino then asks for a fresh link.
 // A film's single video is the addon's `<id>:1` (the id its meta lists too, though some films' meta lists none).
 export async function resolve(ref) {
-  const hls = /^h:([a-f0-9]{16,64})\/([^/]+)\/(\d+)$/.exec(String(ref || ""));
-  if (hls) return captureHls(hls[1], hls[2], hls[3]);
   const movie = movieIdOf(ref);
   const r = movie ? { type: "movie", id: movie + ":1" } : parseRef("e:", ref);
   if (!r) throw kino.error("not_found", "not a playable ref: " + String(ref).slice(0, 80));
@@ -639,7 +621,7 @@ export async function resolve(ref) {
   const hlsOrdered = copies.slice().sort((a, b) => (a.dub === wantDubFirst ? -1 : 0) - (b.dub === wantDubFirst ? -1 : 0));
   if (!raw.length) {
     // The addon had nothing (it fails on some titles): the site's own HLS, when it lists one, is the only way to play.
-    if (hlsOrdered.length) return captureHls(hlsOrdered[0].id, ep.slug, ep.number);
+    if (hlsOrdered.length) return { ...hlsStream(hlsOrdered[0]), expiresInSeconds: 1800, alternatives: hlsOrdered.slice(1).map(hlsStream) };
     throw kino.error("not_found", "no streams for " + r.id.slice(0, 80), { userMessage: t("noStreams") });
   }
   const seen = new Set();
@@ -650,8 +632,8 @@ export async function resolve(ref) {
   if (ordered[0].dub !== wantDub) kino.log.report("audio_fallback", wantDub ? "dub" : "sub");
   const [first, ...rest] = ordered;
   const main = { ...first.stream, expiresInSeconds: 1800 };
-  const lazy = hlsOrdered.map((c) => ({ label: ("HLS · AnimeAV1 · " + t(c.dub ? "dub" : "sub")).slice(0, 40), ref: `h:${c.id}/${ep.slug}/${ep.number}` }));
-  const alternatives = lazy.concat(rest.slice(0, 11).map((x) => x.stream));
+  const hlsAlts = hlsOrdered.map(hlsStream);
+  const alternatives = hlsAlts.concat(rest.slice(0, 11).map((x) => x.stream));
   if (alternatives.length) main.alternatives = alternatives;
   return main;
 }
