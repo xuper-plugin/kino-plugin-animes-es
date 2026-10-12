@@ -118,6 +118,12 @@ Cómo funciona Voe:
   reproduce (no sirve para enviar a un Chromecast en otra red).
 - **Permisos:** el dominio espejo rota, así que el plugin declara `fetchHosts: "any"` (necesita `apiVersion` 9 y Kino
   ≥ 0.9.55; los Kino anteriores lo rechazan al actualizar). Quien actualice verá una línea roja nueva de aprobación.
+- **Qué se tomó de otros proyectos** (ResolveURL de Gujal00, VoeExtractor de alexeichhorn, ambos revisados el
+  2026-10-12): el algoritmo es el mismo que usan ellos; de ResolveURL, que los marcadores de basura los publica el script
+  `loader.<hash>.js` que va justo después del JSON (se leen de ahí y la lista fija es solo el respaldo); y de ambos, los
+  formatos antiguos de página (`sources = { hls: "<base64>" }`), las claves `source`/`file`/`direct_access_url` y las
+  redirecciones por `window.location`. ResolveURL además mantiene a mano ~150 dominios espejo; aquí no hace falta porque
+  basta con `/e/<id>` en cualquier host.
 - **Medido en el Fire Stick (1.4.1, E1 de Tensei Akujo):** resolver 1.0 s (voe.sx 0.2 s + espejo 0.6 s), primer
   cuadro a ~10 s, 17.9 MB en 79 s con 0.2–5 Mbit/s y sin cortes. Es utilizable pero claramente más lenta que el HLS de
   AnimeAV1 (1.2 s y ráfagas de 12–21 Mbit/s): por eso es respaldo y no principal.
