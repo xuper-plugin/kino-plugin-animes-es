@@ -582,7 +582,7 @@ async function captureHls(id) {
     throw kino.error("not_found", "the hidden page showed no playlist", { userMessage: t("hlsFailed") });
   }
   const out = { url: media.url, mime: "application/x-mpegURL", expiresInSeconds: 1800 };
-  if (media.headers) out.headers = media.headers;
+  out.headers = Object.assign({}, media.headers, { "Sec-Fetch-Site": "same-origin" });
   return out;
 }
 
