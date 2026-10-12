@@ -118,6 +118,9 @@ Cómo funciona Voe:
   reproduce (no sirve para enviar a un Chromecast en otra red).
 - **Permisos:** el dominio espejo rota, así que el plugin declara `fetchHosts: "any"` (necesita `apiVersion` 9 y Kino
   ≥ 0.9.55; los Kino anteriores lo rechazan al actualizar). Quien actualice verá una línea roja nueva de aprobación.
+- **Medido en el Fire Stick (1.4.1, E1 de Tensei Akujo):** resolver 1.0 s (voe.sx 0.2 s + espejo 0.6 s), primer
+  cuadro a ~10 s, 17.9 MB en 79 s con 0.2–5 Mbit/s y sin cortes. Es utilizable pero claramente más lenta que el HLS de
+  AnimeAV1 (1.2 s y ráfagas de 12–21 Mbit/s): por eso es respaldo y no principal.
 - **Enlaces muertos:** Voe retira enlaces (uno de cada cinco episodios del título de prueba daba 404). Antes de ofrecer
   la copia se comprueba el embed (en paralelo, y se recuerda 1 h): si está caído no aparece en el menú.
 - **Se apaga** con el ajuste **Copia Voe (respaldo)**.
