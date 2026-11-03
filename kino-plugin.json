@@ -1,7 +1,7 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "apiVersion": 9,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -147,5 +147,32 @@
     }
   ],
   "debug": true,
-  "fetchHosts": "any"
+  "fetchHosts": "any",
+  "enhancements": {
+    "14": {
+      "capabilities": [
+        "screen"
+      ],
+      "screen": {
+        "label": "AnimES",
+        "labelEn": "AnimES",
+        "icon": "movie",
+        "menuOpens": "screen",
+        "opensFrom": [
+          "menu",
+          "settings"
+        ],
+        "settingsButton": {
+          "label": "Abrir AnimES",
+          "labelEn": "Open AnimES"
+        },
+        "settingsIn": "screen"
+      }
+    },
+    "19": {
+      "capabilities": [
+        "screen"
+      ]
+    }
+  }
 }
