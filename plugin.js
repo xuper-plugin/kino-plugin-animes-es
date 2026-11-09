@@ -961,7 +961,7 @@ async function onAirItems(src) {
 }
 async function onAirRow(src) {
   try {
-    const items = await onAirItems(src);
+    const items = (await onAirItems(src)).slice(0, 60);
     return items.length ? { id: "onair-" + src.id, title: t("rowOnAir", { name: src.label }), items, genre: "anime" } : null;
   } catch (e) {
     kino.log("on air " + src.id + " failed: " + (e && e.message));

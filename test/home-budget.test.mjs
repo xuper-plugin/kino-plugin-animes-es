@@ -34,3 +34,11 @@ test("home shows the source that answered and leaves off the ones that never do"
     assert.ok(clock <= 12000, "it gave up at the budget, clock " + clock);
   } finally { Date.now = realNow; }
 });
+
+test("a row carries at most 60 titles, what Kino keeps", async () => {
+  kino.fetch = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ metas: Array.from({ length: 90 }, (_, i) => ({ id: "tv-" + i, name: "T" + i })) }) });
+  store.clear();
+  const rows = await plugin.home();
+  assert.ok(rows.length >= 1);
+  for (const r of rows) assert.ok(r.items.length <= 60, r.id + " " + r.items.length);
+});
