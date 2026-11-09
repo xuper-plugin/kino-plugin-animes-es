@@ -631,6 +631,7 @@ function makeBrowse({ kino: kino2, loadTab, searchTitles }) {
 }
 
 // src/plugin.js
+globalThis.__kinoDropPendingFetches = true;
 var BASE = "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime";
 var GENRE_PAGE = 20;
 var LIST_TIMEOUT_MS = 8e3;
@@ -967,9 +968,28 @@ async function onAirRow(src) {
     return null;
   }
 }
+var ROWS_BUDGET_MS = 11e3;
+async function onAirRows() {
+  const sources = enabledSources();
+  const out = new Array(sources.length).fill(null);
+  const end = Date.now() + ROWS_BUDGET_MS;
+  let done = false;
+  let next = 0;
+  async function worker() {
+    while (next < sources.length && Date.now() < end) {
+      const i = next++;
+      out[i] = await onAirRow(sources[i]);
+    }
+  }
+  const all = Promise.all(Array.from({ length: Math.min(4, sources.length) }, worker)).then(() => {
+    done = true;
+  });
+  while (!done && Date.now() < end) await Promise.race([all, kino.sleep(Math.min(250, Math.max(1, end - Date.now())))]);
+  return out.filter(Boolean);
+}
 async function home() {
   if (kino.config.get("homeRows") === false) return [];
-  return (await mapLimit(enabledSources(), 4, onAirRow)).filter(Boolean);
+  return onAirRows();
 }
 async function browse(ref, cursor) {
   const skip = Math.max(0, parseInt(cursor || "0", 10) || 0);
@@ -997,7 +1017,7 @@ async function section({ tab }) {
 }
 var SCREEN_GENRES = 8;
 async function tabPage(tab) {
-  if (tab !== "generos") return { rows: (await mapLimit(enabledSources(), 4, onAirRow)).filter(Boolean) };
+  if (tab !== "generos") return { rows: await onAirRows() };
   const src = enabledSources()[0];
   if (!src) return { rows: [] };
   const rows = await mapLimit(GENRES.slice(0, SCREEN_GENRES), 4, async (genre) => {

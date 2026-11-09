@@ -10,6 +10,9 @@
 
 import { makeBrowse } from "./browse/index.js";
 
+// Kino waits for every request a call left running before it delivers the call's answer; ask it to drop them once the call settles.
+globalThis.__kinoDropPendingFetches = true;
+
 const BASE = "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime";
 const GENRE_PAGE = 20;
 // A source that answers slower than this is left out of the answer, never holding the others back.
@@ -381,9 +384,30 @@ async function onAirRow(src) {
   }
 }
 
+const ROWS_BUDGET_MS = 11000;
+
+// The "on air" row of every source, asked four at a time but never past the budget: a slow source is left off and the others show,
+// instead of the whole Home running over Kino's 20 s and being thrown away.
+async function onAirRows() {
+  const sources = enabledSources();
+  const out = new Array(sources.length).fill(null);
+  const end = Date.now() + ROWS_BUDGET_MS;
+  let done = false;
+  let next = 0;
+  async function worker() {
+    while (next < sources.length && Date.now() < end) {
+      const i = next++;
+      out[i] = await onAirRow(sources[i]);
+    }
+  }
+  const all = Promise.all(Array.from({ length: Math.min(4, sources.length) }, worker)).then(() => { done = true; });
+  while (!done && Date.now() < end) await Promise.race([all, kino.sleep(Math.min(250, Math.max(1, end - Date.now())))]);
+  return out.filter(Boolean);
+}
+
 export async function home() {
   if (kino.config.get("homeRows") === false) return [];
-  return (await mapLimit(enabledSources(), 4, onAirRow)).filter(Boolean);
+  return onAirRows();
 }
 
 // A genre's page. The first page is cached; later ones are asked for as the person scrolls.
@@ -424,7 +448,7 @@ const SCREEN_GENRES = 8;
 // One tab of the browse screen as a section page: Inicio is every source's "on air" row, Géneros the first genres of the first
 // source (a genre's first page is cached by browse()).
 async function tabPage(tab) {
-  if (tab !== "generos") return { rows: (await mapLimit(enabledSources(), 4, onAirRow)).filter(Boolean) };
+  if (tab !== "generos") return { rows: await onAirRows() };
   const src = enabledSources()[0];
   if (!src) return { rows: [] };
   const rows = await mapLimit(GENRES.slice(0, SCREEN_GENRES), 4, async (genre) => {
