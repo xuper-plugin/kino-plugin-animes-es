@@ -1,13 +1,13 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "apiVersion": 20,
   "entry": "plugin.js",
   "icon": "icon.png",
-  "description": "Anime en español, doblado o subtitulado, desde AnimeAV1, Henaojara, TioAnime y JKAnime. Catálogo y enlaces del addon AnimES de Pigamer37.",
+  "description": "Anime en español, doblado o subtitulado, desde AnimeAV1, Henaojara, TioAnime y Latanime. Catálogo y enlaces del addon AnimES de Pigamer37.",
   "author": "xuper-plugin",
-  "homepage": "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime/manifest.json",
+  "homepage": "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Clatanime/manifest.json",
   "hosts": [
     "pigamer37.alwaysdata.net",
     "animeav1.com",
@@ -88,11 +88,10 @@
       "default": true
     },
     {
-      "key": "src_jkanime",
+      "key": "src_latanime",
       "type": "toggle",
-      "label": "JKAnime",
-      "default": false,
-      "hint": "Apagada: su servidor no devuelve episodios ni búsquedas por ahora."
+      "label": "Latanime",
+      "default": true
     },
     {
       "key": "hls",

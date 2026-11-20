@@ -1,6 +1,6 @@
 // @ts-check
 /// <reference path="./kino.d.ts" />
-// Kino plugin: AnimES -- anime in Spanish from AnimeAV1, Henaojara, TioAnime and JKAnime.
+// Kino plugin: AnimES -- anime in Spanish from AnimeAV1, Henaojara, TioAnime and Latanime.
 // Talks to one backend (pigamer37.alwaysdata.net, the AnimES Stremio addon); what it returns is mapped to Kino's items,
 // episodes and streams. Read it top to bottom:
 //   1. constants   2. texts   3. cache   4. addon client   5. sources and ids   6. items   7. search
@@ -13,7 +13,7 @@ import { makeBrowse } from "./browse/index.js";
 // Kino waits for every request a call left running before it delivers the call's answer; ask it to drop them once the call settles.
 globalThis.__kinoDropPendingFetches = true;
 
-const BASE = "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime";
+const BASE = "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Clatanime";
 const GENRE_PAGE = 20;
 // A source that answers slower than this is left out of the answer, never holding the others back.
 const LIST_TIMEOUT_MS = 8000;
@@ -242,7 +242,7 @@ const SOURCES = [
   { id: "animeav1", label: "AnimeAV1", type: "AnimeAV1" },
   { id: "henaojara", label: "Henaojara", type: "Henaojara" },
   { id: "tioanime", label: "TioAnime", type: "TioAnime" },
-  { id: "jkanime", label: "JKAnime", type: "JKAnime" },
+  { id: "latanime", label: "Latanime", type: "Latanime" },
 ];
 
 // Genres every source has (the addon's manifest lists them per source; these are the common ones).
@@ -787,7 +787,7 @@ async function twinSlug(type, seriesId, slug) {
 // The slug and episode number of a video id ("<source>:<slug>:<n>"). The sources share slugs for most titles, so any
 // source's episode is looked up on AnimeAV1 too: a miss is just a 404 there and the episode keeps its own copies.
 function animeav1Episode(videoId) {
-  const m = /^(?:animeav1|henaojara|tioanime|jkanime):(.+):(\d{1,5})$/.exec(String(videoId || ""));
+  const m = /^(?:animeav1|henaojara|tioanime|latanime|jkanime):(.+):(\d{1,5})$/.exec(String(videoId || ""));
   return m ? { slug: m[1], number: m[2] } : null;
 }
 

@@ -632,7 +632,7 @@ function makeBrowse({ kino: kino2, loadTab, searchTitles }) {
 
 // src/plugin.js
 globalThis.__kinoDropPendingFetches = true;
-var BASE = "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Cjkanime";
+var BASE = "https://pigamer37.alwaysdata.net/onAirCatalogs=animeav1%2Chenaojara%2Ctioanime%2Clatanime";
 var GENRE_PAGE = 20;
 var LIST_TIMEOUT_MS = 8e3;
 var RESOLVE_TIMEOUT_MS = 8e3;
@@ -850,7 +850,7 @@ var SOURCES = [
   { id: "animeav1", label: "AnimeAV1", type: "AnimeAV1" },
   { id: "henaojara", label: "Henaojara", type: "Henaojara" },
   { id: "tioanime", label: "TioAnime", type: "TioAnime" },
-  { id: "jkanime", label: "JKAnime", type: "JKAnime" }
+  { id: "latanime", label: "Latanime", type: "Latanime" }
 ];
 var GENRES = [
   "accion",
@@ -1289,7 +1289,7 @@ async function twinSlug(type, seriesId, slug) {
   }
 }
 function animeav1Episode(videoId) {
-  const m = /^(?:animeav1|henaojara|tioanime|jkanime):(.+):(\d{1,5})$/.exec(String(videoId || ""));
+  const m = /^(?:animeav1|henaojara|tioanime|latanime|jkanime):(.+):(\d{1,5})$/.exec(String(videoId || ""));
   return m ? { slug: m[1], number: m[2] } : null;
 }
 function tellApart(list) {
