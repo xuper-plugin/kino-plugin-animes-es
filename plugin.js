@@ -1191,81 +1191,29 @@ async function tioanimeVoe(slug, number) {
   }
 }
 var VOE_EMBED = /^https:\/\/[a-z0-9.-]+\/e\/[A-Za-z0-9]{6,40}$/;
-var VOE_JUNK = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"];
-function voeDecode(ct, markers) {
-  let t2 = String(ct).replace(/[a-zA-Z]/g, (c) => {
-    const base = c <= "Z" ? 65 : 97;
-    return String.fromCharCode((c.charCodeAt(0) - base + 13) % 26 + base);
-  });
-  for (const j of markers && markers.length ? markers : VOE_JUNK) t2 = t2.split(j).join("");
-  const shifted = atob(t2);
-  let u = "";
-  for (let i = shifted.length - 1; i >= 0; i--) u += String.fromCharCode(shifted.charCodeAt(i) - 3);
-  const bin = atob(u);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return JSON.parse(new TextDecoder().decode(bytes));
-}
-async function voeMarkers(pageUrl, src) {
+async function viaResolver(embedUrl) {
+  let res = null;
   try {
-    const r = await kino.fetch(new URL(src, pageUrl).href, { timeoutMs: 4e3 });
-    if (!r.ok) return null;
-    const arr = /(\[(?:'\W{2}'[,\]]){1,9})/.exec(r.text());
-    if (!arr) return null;
-    const list = [];
-    const re = /'(\W{2})'/g;
-    let m;
-    while (m = re.exec(arr[1])) list.push(m[1]);
-    return list.length ? list : null;
+    res = await kino.plugins.call("resolver", "resolve", { url: embedUrl });
   } catch {
-    return null;
   }
-}
-function voePick(data) {
-  const list = ["source", "file", "direct_access_url"].map((k) => data && data[k]).filter((v) => typeof v === "string" && /^https:\/\//.test(v));
-  return list.find((u) => /\.m3u8(\?|$)/.test(u)) || list.find((u) => /\.mp4(\?|$)/.test(u)) || list[0] || "";
-}
-async function voeStream(embedUrl) {
-  if (!VOE_EMBED.test(String(embedUrl))) throw kino.error("not_found", "not a Voe embed: " + String(embedUrl).slice(0, 80));
-  let url = embedUrl;
-  let source = "";
-  for (let hop = 0; hop < 4 && !source; hop++) {
-    const r = await kino.fetch(url, { timeoutMs: RESOLVE_TIMEOUT_MS });
-    if (!r.ok) break;
-    const html = r.text();
-    const json = /<script[^>]*type="application\/json"[^>]*>\s*(\[[\s\S]*?\])\s*<\/script>(?:\s*<script[^>]+src="([^"]+)")?/.exec(html);
-    if (json) {
-      try {
-        const markers = json[2] ? await voeMarkers(url, json[2]) : null;
-        source = voePick(voeDecode(JSON.parse(json[1])[0], markers));
-      } catch (e) {
-        kino.log("voe decode failed: " + (e && e.message));
-      }
-      if (source) break;
-    }
-    const old = /sources\s*=\s*\{[\s\S]*?['"]hls['"]\s*:\s*(['"])([^'"]+)\1/.exec(html);
-    if (old) {
-      try {
-        const d = /^https:\/\//.test(old[2]) ? old[2] : atob(old[2]);
-        if (/^https:\/\//.test(d)) source = d;
-      } catch {
-      }
-      if (source) break;
-    }
-    const plain = /['"]hls['"]\s*:\s*['"](https:\/\/[^'"]+)['"]/.exec(html);
-    if (plain) {
-      source = plain[1];
-      break;
-    }
-    const next = /(?:window\.)?location(?:\.href)?\s*=\s*['"](https?:\/\/[^'"]+)['"]/.exec(html);
-    if (!next) break;
-    url = next[1];
-  }
-  if (!source) {
+  const s = (res && Array.isArray(res.streams) ? res.streams : []).find((x) => x && x.url);
+  if (!s) {
     kino.log.report("voe_failed", "no_source");
     throw kino.error("unavailable", "Voe gave no playlist", { userMessage: t("copyFailed") });
   }
-  return { url: source, mime: /\.mp4(\?|$)/.test(source) ? "video/mp4" : "application/x-mpegURL", expiresInSeconds: 3600 };
+  const headers = {};
+  if (s.referer) headers.Referer = s.referer;
+  if (Array.isArray(s.headers)) {
+    for (const h of s.headers) if (h && h.name) headers[h.name] = String(h.value);
+  }
+  const out = { url: s.url, mime: /\.mp4(\?|$)/.test(s.url) ? "video/mp4" : "application/x-mpegURL", expiresInSeconds: 3600 };
+  if (Object.keys(headers).length) out.headers = headers;
+  return out;
+}
+async function voeStream(embedUrl) {
+  if (!VOE_EMBED.test(String(embedUrl))) throw kino.error("not_found", "not a Voe embed: " + String(embedUrl).slice(0, 80));
+  return viaResolver(embedUrl);
 }
 async function voeAlive(url) {
   try {
