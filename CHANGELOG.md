@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.2
+
+- Back closes the search box instead of the screen; a tab that takes too long offers Retry instead of skeletons; fewer TMDB lookups per tick (std 1.6.0)
+
 ## 1.7.1
 
 - The standard screen catches up: a hero from TMDB backdrops when the site has none, TMDB lookups three at a time, one card shape per rail, a row's English title (std 1.5.1)
