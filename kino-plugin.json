@@ -1,7 +1,7 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.7.6",
+  "version": "1.7.7",
   "apiVersion": 30,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -204,6 +204,6 @@
   },
   "signature": {
     "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
-    "value": "b4547b33901c6dd9dae6a13bc18c10db9bc8766f3dc56c78fc4af613beae90743e3c9e4cf0a043becdf4d6bfeae1b13c1aadaac047b87c43fda98abdadb83a04"
+    "value": "4fa40b021457f01924574784d77a593681c6df971ce56c8da8f969f11550ada88f04e9f0dad2990419c094855e719dc8ef0fc73aa4c86010750daf7fddb7a209"
   }
 }
