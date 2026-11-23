@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.6
+
+- Catalog door: Da-Video finds titles here (std 1.7.0)
+
 ## 1.7.5
 
 - Kino's own settings form shows again in Ajustes (settingsIn both); Retry keeps the queued work (std 1.6.2)
