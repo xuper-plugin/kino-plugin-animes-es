@@ -8,7 +8,8 @@
 // Declared host: pigamer37.alwaysdata.net (kino.fetch). The video itself is on other servers (vidcache.net, mp4upload.com...):
 // that is the manifest's `streamHosts: "any"`, which the person approves at install.
 
-import { makeBrowse } from "./browse/index.js";
+import { makeStandardScreen } from "./std/index.js";
+import { LOGO, LOGO_ASPECT } from "./logo.js";
 
 // Kino waits for every request a call left running before it delivers the call's answer; ask it to drop them once the call settles.
 globalThis.__kinoDropPendingFetches = true;
@@ -464,23 +465,29 @@ async function tabPage(tab) {
   return { rows: rows.filter(Boolean) };
 }
 
-let browseInstance = null;
-const browseScreen = () => (browseInstance ??= makeBrowse({
-  kino,
+// ---- the screen: the standard xuper-plugin screen (src/std) ----
+
+// AnimES plays without kino-resolver (the sites' own HLS and the addon copies); only VOE goes through it and falls through to the next copy when it is missing: no install gate.
+let std = null;
+const standard = () => (std ??= makeStandardScreen({
+  kino, name: "AnimES", logo: LOGO, logoAspect: LOGO_ASPECT, needsResolver: false, hasSettings: true,
+  tabs: [
+    { id: "inicio", label: "Inicio", labelEn: "Home" },
+    { id: "generos", label: "Géneros", labelEn: "Genres" },
+  ],
   loadTab: (tab) => tabPage(tab),
-  searchTitles: (q) => search({ q }),
+  // TMDB is asked for the name without "(2023)", "(Season 1)" and the like.
+  titleOf: (c) => String(c.title).replace(/\s*[([][^)\]]*[)\]]/g, "").replace(/\s+/g, " ").trim() || String(c.title),
 }));
 
-/** `screen(ctx)`: the plugin's own browse screen (a pure view: it draws what it holds and never waits for a source). */
 export async function screen(ctx) {
   await null;
-  return browseScreen().view(ctx && typeof ctx === "object" ? ctx : {});
+  return standard().screen(ctx && typeof ctx === "object" ? ctx : {});
 }
 
-/** `screenEvent(ev)`: the screen's events (its timers load a tab or a search, one per call). */
 export async function screenEvent(ev) {
   await null;
-  return browseScreen().event(ev && typeof ev === "object" ? ev : {});
+  return standard().screenEvent(ev && typeof ev === "object" ? ev : {});
 }
 
 // Genre tiles. The art of each is its first title's poster, cached 12 h per genre: the first opening asks for it (six at a
@@ -897,7 +904,7 @@ async function resolveRef(ref) {
 export async function resolve(ref) {
   const out = await resolveRef(ref);
   // The browse screen's "Continuar viendo": a play that found a copy is remembered.
-  try { browseScreen().notePlayed(ref); } catch { /* never fails a play */ }
+  try { standard().notePlayed(ref); } catch { /* never fails a play */ }
   return out;
 }
 
