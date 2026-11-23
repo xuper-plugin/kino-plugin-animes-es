@@ -1,7 +1,7 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "apiVersion": 30,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -161,7 +161,7 @@
       "label": "Abrir AnimES",
       "labelEn": "Open AnimES"
     },
-    "settingsIn": "screen"
+    "settingsIn": "both"
   },
   "recommends": [
     "xuper-plugin/kino-plugin-kino-resolver"
