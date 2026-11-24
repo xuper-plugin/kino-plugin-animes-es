@@ -42,3 +42,11 @@ test("a row carries at most 60 titles, what Kino keeps", async () => {
   assert.ok(rows.length >= 1);
   for (const r of rows) assert.ok(r.items.length <= 60, r.id + " " + r.items.length);
 });
+
+test("every home row is typed anime, the type Kino's Home-by-categories reads", async () => {
+  store.clear();
+  kino.fetch = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ metas: [{ id: "tv-1", name: "Uno" }] }) });
+  const rows = await plugin.home();
+  assert.ok(rows.length >= 1);
+  for (const row of rows) assert.equal(row.genre, "anime", row.id);
+});
