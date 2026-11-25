@@ -411,7 +411,7 @@ test("catalogItems: a plugin's search results as the catalog door's Item, at mos
   assert.deepEqual(out[0], { id: "i1", ref: "m:1", title: "Title 1", kind: "movie", poster: "https://img/p1.jpg", backdrop: "https://img/b1.jpg", year: "2001", overview: "Overview 1", tmdb: 77 });
   assert.deepEqual(catalogItems([{ id: "x", ref: "r", title: "T", kind: "series" }]), [{ id: "x", ref: "r", title: "T", kind: "series" }]);
   assert.deepEqual(catalogItems([{ id: "", ref: "r", title: "T", kind: "movie" }, null, { id: "y" }]), []);
-  assert.deepEqual(Object.keys(CATALOG_PROVIDES.catalog.calls), ["search"]);
+  assert.deepEqual(Object.keys(CATALOG_PROVIDES.catalog.calls), ["search", "episodes"]);
 });
 
 /** A Da-Video-like screen: its search is shown here, from several plugins answering one after another. */
@@ -531,4 +531,143 @@ test("std 1.7.1: the search ops stay within Kino's 8 on a TV, the leading arrow 
   const close = ops(all.find((n) => n.key === "closeSearch").onPressed);
   assert.ok(open.length <= 8 && close.length <= 8, `open ${open.length}, close ${close.length}`);
   assert.ok(open.includes("hide:close") && close.includes("show:close"));
+});
+
+// ---- Home snapshot (std 1.8.0) ----
+import { snapshotRows, snapshotUrl, snapshotSource, SNAPSHOT_MAX_AGE_MS } from "../src/std/index.js";
+
+const snapRow = { id: "s1", title: "Desde GitHub", items: [item(9)] };
+const snapFile = (over = {}) => JSON.stringify({ v: 1, tab: "inicio", at: Date.now(), rows: [snapRow], ...over });
+
+/** A kino whose fetch answers the snapshot url with [answer] (a string body, a status number, or a thrown error). */
+function snapKino(answer, seen = []) {
+  const k = fakeKino();
+  k.fetch = async (url) => {
+    seen.push(url);
+    if (answer instanceof Error) throw answer;
+    if (typeof answer === "number") return { ok: false, status: answer, text: async () => "" };
+    return { ok: true, status: 200, text: async () => answer };
+  };
+  return k;
+}
+
+test("snapshot: the file's rows, only for its own tab, fresh and non-empty", () => {
+  const now = Date.now();
+  assert.deepEqual(snapshotRows(snapFile(), "inicio", now), [snapRow]);
+  assert.equal(snapshotRows(snapFile(), "series", now), null, "another tab's file");
+  assert.equal(snapshotRows(snapFile({ at: now - SNAPSHOT_MAX_AGE_MS - 1 }), "inicio", now), null, "older than 24 h");
+  assert.equal(snapshotRows(snapFile({ rows: [] }), "inicio", now), null, "empty");
+  assert.equal(snapshotRows(snapFile({ v: 2 }), "inicio", now), null, "unknown version");
+  assert.equal(snapshotRows("<html>", "inicio", now), null, "not JSON");
+  assert.equal(snapshotUrl("xuper-plugin/kino-plugin-serieskao", "inicio"), "https://raw.githubusercontent.com/xuper-plugin/kino-plugin-serieskao/main/home/inicio.json");
+});
+
+test("snapshot: the screen opens from the repository's file and never scrapes the site", async () => {
+  let live = 0;
+  const seen = [];
+  const s = make({ kino: snapKino(snapFile(), seen), snapshot: "xuper-plugin/kino-plugin-serieskao", loadTab: async () => { live++; return { rows: [] }; } });
+  await loaded(s);
+  const tree = JSON.stringify(await s.screen({ state: await loaded(s), device: "phone", installed }));
+  assert.equal(live, 0);
+  assert.ok(seen[0].endsWith("/home/inicio.json"));
+  assert.ok(tree.includes("Desde GitHub"));
+});
+
+test("snapshot: a missing, failed or stale file falls back to the live site", async () => {
+  for (const answer of [404, new Error("offline"), snapFile({ at: Date.now() - SNAPSHOT_MAX_AGE_MS - 1 })]) {
+    let live = 0;
+    const s = make({ kino: snapKino(answer), snapshot: "xuper-plugin/kino-plugin-serieskao", loadTab: async () => { live++; return { rows: [{ id: "r1", title: "Estrenos", items: [item(1)] }] }; } });
+    await loaded(s);
+    assert.ok(live >= 1, `live after ${answer instanceof Error ? answer.message : typeof answer === "number" ? answer : "stale"}`);
+  }
+});
+
+test("snapshot: without the option nothing is fetched, and the script finds the live tabs", async () => {
+  const seen = [];
+  const s = make({ kino: snapKino(snapFile(), seen) });
+  await loaded(s);
+  assert.equal(seen.length, 0);
+  const src = snapshotSource();
+  assert.ok(Array.isArray(src.tabs) && typeof src.loadTab === "function");
+});
+
+// ---- server order from the resolver (std 1.9.2) ----
+import { rankServers, scoresFromResolver } from "../src/std/rank.js";
+
+test("rankServers: by group (the person's language), then the resolver's score, then as they came; no scores = own order", async () => {
+  const servers = [{ u: "voe", lang: 0 }, { u: "vidhide", lang: 0 }, { u: "uqload", lang: 1 }, { u: "mixdrop", lang: 0 }];
+  const score = { voe: 72, vidhide: 95, uqload: 35, mixdrop: 85 };
+  const kino = { plugins: { call: async (_a, call, arg) => (call === "rank" ? { scores: arg.urls.map((u) => score[u]) } : null) } };
+  assert.deepEqual((await rankServers(kino, servers, (s) => s.u, (s) => s.lang)).map((s) => s.u), ["vidhide", "mixdrop", "voe", "uqload"]);
+  const old = { plugins: { call: async () => { const e = new Error("x"); e.code = "not_declared"; throw e; } } };
+  assert.deepEqual((await rankServers(old, servers, (s) => s.u, (s) => s.lang)).map((s) => s.u), ["voe", "vidhide", "mixdrop", "uqload"]);
+  assert.equal(await scoresFromResolver(kino, []), null);
+});
+
+test("rankServers: netu/Waaw never offered (even without a resolver), and a server the resolver scores below 0 leaves too", async () => {
+  const servers = [{ u: "https://waaw.to/f/x" }, { u: "netu" }, { u: "voe" }, { u: "gone" }];
+  const kino = { plugins: { call: async (_a, call, arg) => ({ scores: arg.urls.map((u) => (u === "gone" ? -1 : 50)) }) } };
+  assert.deepEqual((await rankServers(kino, servers, (s) => s.u)).map((s) => s.u), ["voe"]);
+  const old = { plugins: { call: async () => { throw new Error("not_declared"); } } };
+  assert.deepEqual((await rankServers(old, servers, (s) => s.u)).map((s) => s.u), ["voe", "gone"]);
+});
+
+test("catalogEpisodes keeps season, number, ref, title and drops bad rows", async () => {
+  const { catalogEpisodes } = await import("../src/std/catalog.js");
+  const out = catalogEpisodes({ episodes: [
+    { season: 2, number: 3, ref: "e:1:2:3", title: "Three", extra: 1 }, { season: 1, number: 0, ref: "x" },
+    { season: 1, number: 2, ref: "" }, null, { number: 1.5, ref: "y" }, { season: 1, number: 4, ref: "e4", title: 5 },
+  ] });
+  assert.deepEqual(out, [{ season: 2, number: 3, ref: "e:1:2:3", title: "Three" }, { season: 1, number: 4, ref: "e4" }]);
+  assert.deepEqual(catalogEpisodes([{ number: 1, ref: "a" }]), [{ season: 1, number: 1, ref: "a" }]);
+});
+
+test("catalogEpisodes: a row without season is season 1", async () => {
+  const { catalogEpisodes } = await import("../src/std/catalog.js");
+  assert.equal(catalogEpisodes([{ number: 7, ref: "r" }])[0].season, 1);
+});
+
+test("catalogEpisodes: at most 500", async () => {
+  const { catalogEpisodes, CATALOG_EPISODES_MAX } = await import("../src/std/catalog.js");
+  const many = Array.from({ length: 700 }, (_, i) => ({ season: 1, number: i + 1, ref: "r" + i }));
+  assert.equal(CATALOG_EPISODES_MAX, 500);
+  assert.equal(catalogEpisodes(many).length, 500);
+});
+
+test("catalogEpisodesDoor answers [] for an empty ref without calling the site", async () => {
+  const { catalogEpisodesDoor } = await import("../src/std/catalog.js");
+  let calls = 0;
+  const door = catalogEpisodesDoor(async (ref) => { calls++; return [{ number: 1, ref }]; });
+  assert.deepEqual(await door({ ref: "  " }), []);
+  assert.deepEqual(await door(null), []);
+  assert.equal(calls, 0);
+  assert.deepEqual(await door({ ref: "s:1" }), [{ season: 1, number: 1, ref: "s:1" }]);
+});
+
+test("catalogQuery carries tmdb into tmdbId", async () => {
+  const { catalogQuery } = await import("../src/std/catalog.js");
+  assert.equal(catalogQuery({ q: "a", tmdb: 603 }).tmdbId, 603);
+  assert.equal(catalogQuery({ q: "a", tmdb: -1 }).tmdbId, 0);
+  assert.equal(catalogQuery({ q: "a", tmdb: "603" }).tmdbId, 0);
+  assert.equal(catalogQuery({ q: "a" }).tmdbId, 0);
+});
+
+test("numeric strings are accepted for season and number", async () => {
+  const { catalogEpisodes } = await import("../src/std/catalog.js");
+  assert.deepEqual(catalogEpisodes([{ season: " 2 ", number: "12", ref: "r" }, { number: "x", ref: "r" }]), [{ season: 2, number: 12, ref: "r" }]);
+});
+
+test("a present but invalid season drops the row", async () => {
+  const { catalogEpisodes } = await import("../src/std/catalog.js");
+  const out = catalogEpisodes([
+    { season: -1, number: 1, ref: "a" }, { season: 1.5, number: 1, ref: "b" }, { season: "x", number: 1, ref: "c" },
+    { season: 0, number: 1, ref: "d" }, { season: null, number: 1, ref: "e" },
+  ]);
+  assert.deepEqual(out, [{ season: 0, number: 1, ref: "d" }, { season: 1, number: 1, ref: "e" }]);
+});
+
+test("catalogEpisodesDoor passes a { episodes: [...] } answer through", async () => {
+  const { catalogEpisodesDoor } = await import("../src/std/catalog.js");
+  const door = catalogEpisodesDoor(async () => ({ episodes: [{ season: 1, number: 2, ref: "r", title: "T" }] }));
+  assert.deepEqual(await door({ ref: "s:1" }), [{ season: 1, number: 2, ref: "r", title: "T" }]);
 });

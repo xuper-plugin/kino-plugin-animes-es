@@ -1,7 +1,7 @@
 {
   "id": "animes-es",
   "name": "AnimES",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "apiVersion": 30,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -182,9 +182,16 @@
         "search": {
           "in": {
             "q": "string",
-            "type": "string?"
+            "type": "string?",
+            "tmdb": "number?"
           },
           "out": "Item[]"
+        },
+        "episodes": {
+          "in": {
+            "ref": "string"
+          },
+          "out": "Episode[]"
         }
       },
       "types": {
@@ -198,6 +205,12 @@
           "year": "string?",
           "overview": "string?",
           "tmdb": "number?"
+        },
+        "Episode": {
+          "season": "number",
+          "number": "number",
+          "ref": "string",
+          "title": "string?"
         }
       }
     }

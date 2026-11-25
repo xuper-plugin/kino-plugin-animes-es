@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.8
+
+- The catalog door also lists a series' episodes, for the author's other plugins (std 1.10.0)
+
 ## 1.7.7
 
 - Back arrow instead of the X: leaving goes back to where you came from (std 1.7.1)
