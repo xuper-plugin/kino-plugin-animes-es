@@ -379,7 +379,7 @@ async function onAirRow(src) {
   try {
     // Kino keeps 60 titles of a row and drops the rest: no point carrying more.
     const items = (await onAirItems(src)).slice(0, 60);
-    return items.length ? { id: "onair-" + src.id, title: t("rowOnAir", { name: src.label }), items, genre: "anime" } : null;
+    return items.length ? { id: "onair-" + src.id, title: t("rowOnAir", { name: src.label }), items, genre: "anime", ref: "o:" + src.id } : null;
   } catch (e) {
     kino.log("on air " + src.id + " failed: " + (e && e.message));
     return null;
@@ -413,7 +413,15 @@ export async function home() {
 }
 
 // A genre's page. The first page is cached; later ones are asked for as the person scrolls.
+// "o:<source>" is a source's whole airing list ("Ver más" of its Home row): the backend ignores skip there and always answers
+// the full list, so it is one page with no next.
 export async function browse(ref, cursor) {
+  const air = /^o:([a-z0-9]+)$/.exec(String(ref || ""));
+  if (air) {
+    const src = sourceById(air[1]);
+    if (!src) throw kino.error("not_found", "unknown browse ref: " + String(ref).slice(0, 60));
+    return { items: await onAirItems(src) };
+  }
   const skip = Math.max(0, parseInt(cursor || "0", 10) || 0);
   const m = /^g:([a-z0-9]+):([a-z0-9-]+)$/.exec(String(ref || ""));
   const src = m && sourceById(m[1]);

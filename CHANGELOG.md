@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.9
+
+- Home rows open their full list with Ver más
+
 ## 1.7.8
 
 - The catalog door also lists a series' episodes, for the author's other plugins (std 1.10.1)

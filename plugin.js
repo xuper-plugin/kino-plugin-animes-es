@@ -1190,7 +1190,7 @@ async function onAirItems(src) {
 async function onAirRow(src) {
   try {
     const items = (await onAirItems(src)).slice(0, 60);
-    return items.length ? { id: "onair-" + src.id, title: t("rowOnAir", { name: src.label }), items, genre: "anime" } : null;
+    return items.length ? { id: "onair-" + src.id, title: t("rowOnAir", { name: src.label }), items, genre: "anime", ref: "o:" + src.id } : null;
   } catch (e) {
     kino.log("on air " + src.id + " failed: " + (e && e.message));
     return null;
@@ -1220,6 +1220,12 @@ async function home() {
   return onAirRows();
 }
 async function browse(ref, cursor) {
+  const air = /^o:([a-z0-9]+)$/.exec(String(ref || ""));
+  if (air) {
+    const src2 = sourceById(air[1]);
+    if (!src2) throw kino.error("not_found", "unknown browse ref: " + String(ref).slice(0, 60));
+    return { items: await onAirItems(src2) };
+  }
   const skip = Math.max(0, parseInt(cursor || "0", 10) || 0);
   const m = /^g:([a-z0-9]+):([a-z0-9-]+)$/.exec(String(ref || ""));
   const src = m && sourceById(m[1]);

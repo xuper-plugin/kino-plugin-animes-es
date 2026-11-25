@@ -50,3 +50,17 @@ test("every home row is typed anime, the type Kino's Home-by-categories reads", 
   assert.ok(rows.length >= 1);
   for (const row of rows) assert.equal(row.genre, "anime", row.id);
 });
+
+test("every on-air row opens its whole airing list with Ver más", async () => {
+  store.clear();
+  kino.fetch = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ metas: Array.from({ length: 90 }, (_, i) => ({ id: "tv-" + i, name: "T" + i })) }) });
+  const rows = await plugin.home();
+  assert.ok(rows.length >= 1);
+  for (const row of rows) {
+    assert.equal(row.ref, "o:" + row.id.slice("onair-".length));
+    const page = await plugin.browse(row.ref, null);
+    assert.equal(page.items.length, 90, "the full list, past the row's 60");
+    assert.equal(page.next, undefined, "the backend ignores skip: one page");
+  }
+  await assert.rejects(plugin.browse("o:nope", null));
+});
